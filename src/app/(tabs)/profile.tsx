@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth, useUser } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
@@ -58,8 +58,8 @@ function Row({
 export default function ProfileScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId, signOut } = useAuth();
-  const { user } = useUser();
+  const { userId, signOut } = useAuthUser();
+  const { displayName, email: authEmail } = useAuthUser();
   const profile = useProfile(isClerkConfigured() ? userId : null);
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
@@ -114,8 +114,8 @@ export default function ProfileScreen() {
   };
 
   const p = profile.data;
-  const name = p?.displayName ?? user?.firstName ?? 'Golfer';
-  const email = user?.emailAddresses?.[0]?.emailAddress;
+  const name = p?.displayName ?? displayName ?? 'Golfer';
+  const email = authEmail;
 
   return (
     <Screen scroll>

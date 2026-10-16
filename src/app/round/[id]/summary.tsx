@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { Share2, Sparkles } from 'lucide-react-native';
 
 import { Screen, SectionHeader } from '@/components/ui/Screen';
@@ -22,23 +22,25 @@ import {
 } from '@/lib/scoring/engine';
 import { fetchRemoteRoundDomain } from '@/lib/offline/sync';
 import { generateRecap } from '@/lib/api/ai';
-import { isClerkConfigured, isSupabaseConfigured } from '@/lib/config';
+import { config, isClerkConfigured, isSupabaseConfigured } from '@/lib/config';
+import { DEMO_ROUNDS } from '@/lib/demo/data';
 import { useProfile } from '@/lib/hooks/data';
 
 export default function RoundSummaryScreen() {
   const colors = useColors();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const activeRound = useActiveRound((s) => s.round);
 
-  const round = activeRound?.id === id ? activeRound : null;
+  const demoRound = config.demoMode ? DEMO_ROUNDS.find((r) => r.id === id) : undefined;
+  const round = activeRound?.id === id ? activeRound : (demoRound ?? null);
 
   // If the round isn't the active one (viewing history), fetch it.
   const remote = useQuery({
     queryKey: ['round', id],
     queryFn: () => fetchRemoteRoundDomain(id!),
-    enabled: !!id && !round && isSupabaseConfigured(),
+    enabled: !!id && !round && !config.demoMode && isSupabaseConfigured(),
   });
   const shown = round ?? remote.data ?? null;
 
@@ -92,7 +94,7 @@ export default function RoundSummaryScreen() {
   const recap = useQuery({
     queryKey: ['recap', id],
     queryFn: () => generateRecap(recapInput!),
-    enabled: !!recapInput,
+    enabled: !!recapInput && !config.demoMode,
     staleTime: Infinity,
     retry: false,
   });

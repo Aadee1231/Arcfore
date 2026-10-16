@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
@@ -17,7 +17,7 @@ import type { Handedness, SkillLevel } from '@/types/domain';
 export default function EditProfileScreen() {
   useColors();
   const router = useRouter();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const profile = useProfile(isClerkConfigured() ? userId : null);
   const upsert = useUpsertProfile(isClerkConfigured() ? userId : null);
 

@@ -15,7 +15,7 @@ import {
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
-import { ClerkProvider, useAuth } from '@clerk/expo';
+import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -27,6 +27,7 @@ import { registerSupabaseTokenProvider } from '@/lib/supabase';
 import { registerApiTokenGetter } from '@/lib/api/client';
 import { useActiveRound } from '@/store/activeRound';
 import { initSyncEngine } from '@/lib/offline/sync';
+import { AuthContext, ClerkAuthBridge, DEV_AUTH, useAuthUser } from '@/lib/auth';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -35,13 +36,13 @@ const queryClient = new QueryClient({
 });
 
 function AuthWiring({ children }: { children: React.ReactNode }) {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuthUser();
   const hydrate = useActiveRound((s) => s.hydrate);
   const hydrated = useActiveRound((s) => s.hydrated);
 
   const getFreshToken = useCallback(async () => {
     try {
-      return await getToken({ skipCache: false });
+      return await getToken();
     } catch {
       return null;
     }
@@ -102,23 +103,21 @@ function Inner() {
     <>
       <StatusBar style="auto" />
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="course/[id]" options={{ presentation: 'card' }} />
         <Stack.Screen name="round/setup" options={{ presentation: 'card' }} />
         <Stack.Screen name="round/active" options={{ gestureEnabled: false }} />
-        <Stack.Screen name="round/[id]/scorecard" />
+        <Stack.Screen name="round/scorecard" />
         <Stack.Screen name="round/[id]/summary" />
+        <Stack.Screen name="round/[id]/share" options={{ presentation: 'modal' }} />
         <Stack.Screen name="round/join" options={{ presentation: 'modal' }} />
         <Stack.Screen name="coach/record" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="coach/analysis/[id]" />
         <Stack.Screen name="coach/chat" />
         <Stack.Screen name="bag/index" />
-        <Stack.Screen name="practice/index" />
-        <Stack.Screen name="practice/[slug]" />
-        <Stack.Screen name="share/round/[id]" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="practice" />
       </Stack>
     </>
   );
@@ -139,13 +138,19 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 
-  // Clerk missing → run in signed-out/dev-preview mode (auth screens explain setup)
+  // Clerk missing → dev/preview mode: DEV_AUTH identity, no Clerk hooks anywhere.
   if (!isClerkConfigured() || !publishableKey) {
-    return tree;
+    return (
+      <AuthContext.Provider value={DEV_AUTH}>
+        <AuthWiring>{tree}</AuthWiring>
+      </AuthContext.Provider>
+    );
   }
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <AuthWiring>{tree}</AuthWiring>
+      <ClerkAuthBridge>
+        <AuthWiring>{tree}</AuthWiring>
+      </ClerkAuthBridge>
     </ClerkProvider>
   );
 }

@@ -13,7 +13,7 @@ import { useColors } from '@/theme/ThemeProvider';
 import { spacing, tabularNums, } from '@/theme/theme';
 import { getCourse, getGreenCenters } from '@/lib/api/courses';
 import { useProfile } from '@/lib/hooks/data';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { isClerkConfigured } from '@/lib/config';
 import type { TeeSet } from '@/types/domain';
 
@@ -78,7 +78,7 @@ export default function CourseDetailScreen() {
   const colors = useColors();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const profile = useProfile(isClerkConfigured() ? userId : null);
   const units = profile.data?.units ?? 'yards';
 

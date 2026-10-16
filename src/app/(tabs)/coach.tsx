@@ -1,7 +1,7 @@
 import React from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { Camera, ChevronRight, MessageCircle, Scan, Target } from 'lucide-react-native';
 
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
@@ -16,7 +16,7 @@ import { isClerkConfigured } from '@/lib/config';
 export default function CoachScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const analyses = useSwingAnalyses(isClerkConfigured() ? userId : null);
   const oneThing = useOneThing(isClerkConfigured() ? userId : null);
 

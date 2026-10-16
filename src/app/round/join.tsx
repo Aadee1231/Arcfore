@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { Users } from 'lucide-react-native';
 
 import { Screen } from '@/components/ui/Screen';
@@ -19,7 +19,7 @@ import { isSupabaseConfigured } from '@/lib/config';
 export default function JoinRoundScreen() {
   const colors = useColors();
   const router = useRouter();
-  useAuth();
+  useAuthUser();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { useMutation } from '@tanstack/react-query';
 import { Send, Sparkles } from 'lucide-react-native';
 
@@ -37,7 +37,7 @@ const DEFAULT_PROMPTS = [
 export default function CoachChatScreen() {
   const colors = useColors();
   const params = useLocalSearchParams<{ prefill?: string }>();
-  useAuth();
+  useAuthUser();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState(params.prefill ?? '');
   const [conversationId, setConversationId] = useState<string | null>(null);

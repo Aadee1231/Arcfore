@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
@@ -28,7 +28,7 @@ export default function ClubEditScreen() {
   const colors = useColors();
   const router = useRouter();
   const { clubId } = useLocalSearchParams<{ clubId?: string }>();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const clubs = useClubs(isClerkConfigured() ? userId : null);
   const { upsert } = useClubMutations(isClerkConfigured() ? userId : null);
   const existing = clubs.data?.find((c) => c.id === clubId);

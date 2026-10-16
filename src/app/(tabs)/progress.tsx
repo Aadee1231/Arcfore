@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { BarChart3 } from 'lucide-react-native';
 
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
@@ -37,7 +37,7 @@ function StatTile({ label, value, sub, wide }: { label: string; value: string; s
 export default function ProgressScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const rounds = useRounds(isClerkConfigured() ? userId : null);
   const analyses = useSwingAnalyses(isClerkConfigured() ? userId : null);
   const practice = usePracticeSessions(isClerkConfigured() ? userId : null);

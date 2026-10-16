@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -17,7 +16,7 @@ import {
 } from 'lucide-react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -48,7 +47,7 @@ export default function ActiveRoundScreen() {
   const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ hole?: string }>();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const profile = useProfile(isClerkConfigured() ? userId : null);
   const units = profile.data?.units ?? 'yards';
 
@@ -69,6 +68,7 @@ export default function ActiveRoundScreen() {
   });
   const [participantIndex, setParticipantIndex] = useState(0);
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [confirmFinish, setConfirmFinish] = useState(false);
   const [celebration, setCelebration] = useState<
     'Hole in one' | 'Albatross' | 'Eagle' | 'Birdie' | null
   >(null);
@@ -162,29 +162,17 @@ export default function ActiveRoundScreen() {
   const prev = () => setHoleIndex((i) => Math.max(0, i - 1));
   const next = () => setHoleIndex((i) => Math.min(holeNumbers.length - 1, i + 1));
 
-  const scoredCount = holeNumbers.filter((h) =>
-    round.participants.some((p) => findScore(round.scores, p.id, h)?.strokes != null),
-  ).length;
-
+  // Two-tap confirm (Alert.alert is a no-op on web and easy to fat-finger on course).
   const finish = () => {
-    const unscored = holeNumbers.length - scoredCount;
-    Alert.alert(
-      'Finish round?',
-      unscored > 0
-        ? `${unscored} hole${unscored > 1 ? 's' : ''} still have no score. Unscored holes are left blank on the card.`
-        : 'All holes scored — nice round.',
-      [
-        { text: 'Keep playing', style: 'cancel' },
-        {
-          text: 'Finish round',
-          onPress: () => {
-            setStatus('completed');
-            void flushOutbox();
-            router.replace(`/round/${round.id}/summary`);
-          },
-        },
-      ],
-    );
+    if (!confirmFinish) {
+      setConfirmFinish(true);
+      setTimeout(() => setConfirmFinish(false), 3500);
+      return;
+    }
+    setConfirmFinish(false);
+    setStatus('completed');
+    void flushOutbox();
+    router.replace(`/round/${round.id}/summary`);
   };
 
   const distToCenter = () => {
@@ -208,22 +196,38 @@ export default function ActiveRoundScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg }]}>
-      <Stack.Screen
-        options={{
-          title: round.courseName,
-          headerBackVisible: false,
-          headerRight: () => (
-            <View style={styles.hdrRight}>
-              <Pressable onPress={() => router.push('/round/scorecard')} hitSlop={8}>
-                <ListChecks size={20} color={colors.forest} />
-              </Pressable>
-              <Pressable onPress={finish} hitSlop={8}>
-                <Flag size={20} color={colors.forest} />
-              </Pressable>
-            </View>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: round.courseName, headerBackVisible: false }} />
+
+      {/* in-body header: global headerShown:false means headerRight never renders */}
+      <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
+        <View style={{ flex: 1 }}>
+          <Text variant="bodyStrong" numberOfLines={1}>
+            {round.courseName}
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => router.push('/round/scorecard')}
+          hitSlop={8}
+          accessibilityLabel="View scorecard"
+          style={styles.topBtn}
+        >
+          <ListChecks size={20} color={colors.forest} />
+        </Pressable>
+        <Pressable
+          onPress={finish}
+          hitSlop={8}
+          accessibilityLabel={confirmFinish ? 'Tap again to finish round' : 'Finish round'}
+          style={[styles.topBtn, confirmFinish && { backgroundColor: colors.forest, borderRadius: radius.sm, paddingHorizontal: spacing.sm }]}
+        >
+          {confirmFinish ? (
+            <Text variant="micro" style={{ color: '#F7F4EC' }}>
+              Finish?
+            </Text>
+          ) : (
+            <Flag size={20} color={colors.forest} />
+          )}
+        </Pressable>
+      </View>
 
       {/* sync status strip */}
       <View style={[styles.syncBar, { borderBottomColor: colors.border }]}>
@@ -486,7 +490,15 @@ export default function ActiveRoundScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
-  hdrRight: { flexDirection: 'row', gap: spacing.lg, alignItems: 'center' },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+  },
+  topBtn: { padding: spacing.xs, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
   syncBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { Plus, Ruler, Trash2 } from 'lucide-react-native';
 
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
@@ -24,7 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
 export default function BagScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const clubs = useClubs(isClerkConfigured() ? userId : null);
   const { remove } = useClubMutations(isClerkConfigured() ? userId : null);
   useProfile(isClerkConfigured() ? userId : null);

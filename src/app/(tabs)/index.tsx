@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth, useUser } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { ChevronRight, Flag, Play, Scan, Target } from 'lucide-react-native';
 
@@ -26,8 +26,8 @@ import { isClerkConfigured } from '@/lib/config';
 export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuth();
-  const { user } = useUser();
+  const { userId } = useAuthUser();
+  const { displayName } = useAuthUser();
   const uid = isClerkConfigured() ? userId : 'dev-preview';
 
   const profile = useProfile(isClerkConfigured() ? userId : null);
@@ -38,7 +38,7 @@ export default function HomeScreen() {
 
   const firstName =
     profile.data?.displayName?.split(' ')[0] ??
-    user?.firstName ??
+    displayName ??
     'Golfer';
 
   const stats = useMemo(() => {

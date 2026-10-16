@@ -17,7 +17,7 @@ import { nearbyCourses, searchCourses } from '@/lib/api/courses';
 import { offlineStorage } from '@/lib/offline/storage';
 import type { CourseSummary } from '@/types/domain';
 import { useProfile } from '@/lib/hooks/data';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { isClerkConfigured } from '@/lib/config';
 
 interface RecentCourse extends CourseSummary {
@@ -27,7 +27,7 @@ interface RecentCourse extends CourseSummary {
 export default function PlayScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const profile = useProfile(isClerkConfigured() ? userId : null);
 
   const [query, setQuery] = useState('');

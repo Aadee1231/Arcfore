@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth, useUser } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { Plus, X } from 'lucide-react-native';
 
 import { Screen, SectionHeader } from '@/components/ui/Screen';
@@ -24,8 +24,8 @@ export default function RoundSetupScreen() {
   const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ courseId?: string; manualCourse?: string }>();
-  const { userId } = useAuth();
-  const { user } = useUser();
+  const { userId } = useAuthUser();
+  const { displayName } = useAuthUser();
   const profile = useProfile(isClerkConfigured() ? userId : null);
   const createRound = useActiveRound((s) => s.createRound);
   const activeRound = useActiveRound((s) => s.round);
@@ -87,7 +87,7 @@ export default function RoundSetupScreen() {
     }
     const owner = isClerkConfigured() ? userId : 'dev-preview';
     const myName =
-      profile.data?.displayName ?? user?.firstName ?? 'Me';
+      profile.data?.displayName ?? displayName ?? 'Me';
 
     const holes = tee?.holes ?? [];
     const holeData =
@@ -224,7 +224,7 @@ export default function RoundSetupScreen() {
             <Card>
               <View style={styles.playerRow}>
                 <Text variant="bodyStrong">
-                  {profile.data?.displayName ?? user?.firstName ?? 'You'}
+                  {profile.data?.displayName ?? displayName ?? 'You'}
                 </Text>
                 <Text variant="caption" secondary>
                   You{tee ? ` · ${tee.name}` : ''}

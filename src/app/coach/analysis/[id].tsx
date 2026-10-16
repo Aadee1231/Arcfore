@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AlertTriangle, CheckCircle2, Clock, MessageCircle, Shield, Target } from 'lucide-react-native';
 
@@ -14,7 +14,8 @@ import { useColors } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/theme';
 import { getSupabase, isSupabaseReady } from '@/lib/supabase';
 import type { SwingAnalysis } from '@/types/domain';
-import { isClerkConfigured } from '@/lib/config';
+import { config, isClerkConfigured } from '@/lib/config';
+import { DEMO_ANALYSES } from '@/lib/demo/data';
 
 const CONFIDENCE_LABEL: Record<string, string> = {
   low: 'Low confidence — treat as a hint',
@@ -26,12 +27,13 @@ export default function AnalysisDetailScreen() {
   const colors = useColors();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  useAuth();
+  useAuthUser();
   const [showSteps, setShowSteps] = useState(false);
 
+  const demoAnalysis = config.demoMode ? DEMO_ANALYSES.find((a) => a.id === id) : undefined;
   const analysis = useQuery({
     queryKey: ['analysis', id],
-    enabled: !!id && isClerkConfigured() && isSupabaseReady(),
+    enabled: !!id && !demoAnalysis && isClerkConfigured() && isSupabaseReady(),
     queryFn: async () => {
       const { data, error } = await getSupabase()
         .from('swing_analyses')
@@ -42,6 +44,7 @@ export default function AnalysisDetailScreen() {
       return data as unknown as SwingAnalysis & { video_storage_path?: string };
     },
   });
+
 
   const videoUrl = useQuery({
     queryKey: ['analysis-video', analysis.data?.videoId],
@@ -65,7 +68,7 @@ export default function AnalysisDetailScreen() {
     p.muted = true;
   });
 
-  const a = analysis.data;
+  const a = demoAnalysis ?? analysis.data;
   const qualityColor = a
     ? a.videoQuality === 'good'
       ? colors.birdie

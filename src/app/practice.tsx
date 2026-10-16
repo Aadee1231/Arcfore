@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { useAuth } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { Check, ChevronDown, ChevronUp, Target } from 'lucide-react-native';
 
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
@@ -35,7 +35,7 @@ function completedDrillIdsThisWeek(sessions: { drillId: string; completedAt: str
 export default function PracticeScreen() {
   const colors = useColors();
   useRouter();
-  const { userId } = useAuth();
+  const { userId } = useAuthUser();
   const drills = useDrills();
   const sessions = usePracticeSessions(isClerkConfigured() ? userId : null);
   const oneThing = useOneThing(isClerkConfigured() ? userId : null);

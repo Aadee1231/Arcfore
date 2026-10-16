@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth, useUser } from '@clerk/expo';
+import { useAuthUser } from '@/lib/auth';
 import { useMutation } from '@tanstack/react-query';
 import Animated, { FadeIn, SlideInRight } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,12 +26,11 @@ type Step = 'welcome' | 'skill' | 'goal' | 'details' | 'done';
 export default function Onboarding() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuth();
-  const { user } = useUser();
+  const { userId, displayName: authName, email } = useAuthUser();
 
   const [step, setStep] = useState<Step>('welcome');
   const [displayName, setDisplayName] = useState(
-    user?.firstName ?? user?.emailAddresses[0]?.emailAddress.split('@')[0] ?? '',
+    authName ?? email?.split('@')[0] ?? '',
   );
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('intermediate');
   const [goal, setGoal] = useState('');
@@ -49,7 +48,7 @@ export default function Onboarding() {
       if (!isSupabaseReady()) return; // offline dev mode — skip persistence
       const { error: err } = await getSupabase().from('profiles').upsert({
         id: userId,
-        display_name: displayName.trim() || 'Golfer',
+        display_name: displayName?.trim() || 'Golfer',
         skill_level: skillLevel,
         primary_goal: goal,
         handedness,
