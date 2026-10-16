@@ -1,0 +1,96 @@
+{
+  "expo": {
+    "name": "Arcfore",
+    "slug": "arcfore",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "arcfore",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.arcfore.app",
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Arcfore uses the camera to record your golf swing for AI analysis.",
+        "NSMicrophoneUsageDescription": "Arcfore records audio with swing videos so the coach can give better feedback.",
+        "NSLocationWhenInUseUsageDescription": "Arcfore uses your location to find nearby courses and show on-course distances.",
+        "NSPhotoLibraryUsageDescription": "Arcfore lets you upload existing swing videos for AI analysis.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.arcfore.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#102E25",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "server",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F7F4EC",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76,
+          "dark": {
+            "backgroundColor": "#102E25"
+          }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Arcfore to record your swing for AI analysis.",
+          "microphonePermission": "Allow Arcfore to record audio with your swing video."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Arcfore to find nearby courses and show on-course distances."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Arcfore to access your videos for swing analysis."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Arcfore to save share cards to your photos.",
+          "savePhotosPermission": "Allow Arcfore to save share cards to your photos."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "apiUrl": "https://api.arcfore.aadeec.com",
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
