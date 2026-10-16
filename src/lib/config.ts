@@ -21,5 +21,12 @@ export const config = {
   devUserId: fromEnv('EXPO_PUBLIC_DEV_USER_ID') ?? null,
 } as const;
 
-export const isSupabaseConfigured = () => Boolean(config.supabaseUrl && config.supabaseAnonKey);
-export const isClerkConfigured = () => Boolean(config.clerkPublishableKey);
+export const isSupabaseConfigured = () =>
+  Boolean(
+    config.supabaseUrl.startsWith('http') &&
+      /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(config.supabaseAnonKey),
+  );
+// Reject empty or placeholder keys (e.g. "pk_test_..." copied from .env.example) —
+// Clerk's JS SDK hard-crashes on a malformed key, which bricked the boot.
+export const isClerkConfigured = () =>
+  /^pk_(test|live)_[A-Za-z0-9_]+$/.test(config.clerkPublishableKey);
