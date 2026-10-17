@@ -5,8 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "baseUrl": "..",
-    "paths": { "@/*": ["src/*"] },
+    "paths": { "@/*": ["../src/*"] },
     "skipLibCheck": true,
     "esModuleInterop": true,
     "types": ["vitest/globals", "node"]

@@ -1,27 +1,29 @@
-import React, { createContext, useContext } from 'react';
+import { LOCAL_USER_ID } from '@/lib/db/database';
 import { useAuth, useUser } from '@clerk/expo';
-import { config } from '@/lib/config';
+import React, { createContext, useContext } from 'react';
 
 /**
- * App-wide auth facade. Screens call `useAuthUser()` — never Clerk's `useAuth`
- * directly — so the app can boot in dev/preview mode without a Clerk key
- * (ClerkProvider is skipped entirely in that case and any bare useAuth call
- * would crash the tree).
+ * App-wide auth facade. Arcfore is local-first: everything works without an
+ * account, scoped to a single local profile (`local-user`). If Clerk is
+ * configured AND the user chooses to sign in, `userId` becomes the Clerk id —
+ * used only for API identification, never required for app features.
+ *
+ * Screens call `useAuthUser()` — never Clerk's `useAuth` directly — so the app
+ * boots fine when Clerk isn't configured (ClerkProvider is skipped entirely).
  */
 export interface AuthUser {
   userId: string | null;
+  /** True only when a real Clerk session exists. Local use is always allowed. */
   isSignedIn: boolean;
   isLoaded: boolean;
-  /** Display name from the identity provider (dev: 'Demo'). */
   displayName: string | null;
-  /** Primary email (dev: null). */
   email: string | null;
   getToken: () => Promise<string | null>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthUser>({
-  userId: null,
+  userId: LOCAL_USER_ID,
   isSignedIn: false,
   isLoaded: true,
   displayName: null,
@@ -41,7 +43,7 @@ export function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        userId: userId ?? null,
+        userId: isSignedIn && userId ? userId : LOCAL_USER_ID,
         isSignedIn: !!isSignedIn,
         isLoaded,
         displayName: user?.fullName ?? user?.firstName ?? user?.username ?? null,
@@ -57,12 +59,12 @@ export function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Signed-in identity used when Clerk isn't configured (dev preview / demo). */
-export const DEV_AUTH: AuthUser = {
-  userId: config.devUserId ?? 'dev-preview',
-  isSignedIn: true,
+/** Identity used when Clerk isn't configured: a single local profile. */
+export const LOCAL_AUTH: AuthUser = {
+  userId: LOCAL_USER_ID,
+  isSignedIn: false,
   isLoaded: true,
-  displayName: 'Demo',
+  displayName: null,
   email: null,
   getToken: async () => null,
   signOut: async () => {},

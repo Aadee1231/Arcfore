@@ -1,20 +1,21 @@
-import React, { useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { Stack, useRouter } from 'expo-router';
 import { Camera, CircleStop, Film, SwitchCamera, Upload } from 'lucide-react-native';
+import { useRef, useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { Screen, SectionHeader } from '@/components/ui/Screen';
-import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip, } from '@/components/ui/Chip';
+import { Screen, SectionHeader } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
+import { analyzeSwingFrames } from '@/lib/api/ai';
+import { insertSwingAnalysis, insertSwingVideo } from '@/lib/db/repo';
+import { prepareSwing } from '@/lib/swing/pipeline';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { analyzeSwingVideo } from '@/lib/api/ai';
-import { isClerkConfigured } from '@/lib/config';
 import type { SwingCameraView } from '@/types/domain';
 
 const CLUBS = ['Driver', 'Wood', 'Hybrid', 'Iron', 'Wedge', 'Putter'];
@@ -89,19 +90,45 @@ export default function RecordSwingScreen() {
     setStage('uploading');
     setError(null);
     try {
-      setProgress('Uploading video…');
-      const res = await analyzeSwingVideo({
-        fileUri: uri,
+      // 1. Persist the video on-device + pull real duration + extract frames.
+      setProgress('Preparing your swing…');
+      const prepared = await prepareSwing(uri, { cameraView, clubType });
+      if (!prepared.frames.length) {
+        throw new Error('Could not read frames from that video — try a different clip.');
+      }
+
+      // 2. Upload only the frames for vision analysis (video stays on-device).
+      setProgress(`Analyzing ${prepared.frames.length} frames…`);
+      const { result, model } = await analyzeSwingFrames({
+        frames: prepared.frames,
         cameraView,
         clubType,
+        durationSeconds: prepared.durationSeconds ?? undefined,
+      });
+
+      // 3. Store video + analysis locally.
+      setProgress('Saving results…');
+      await insertSwingVideo({
+        id: prepared.videoId,
+        localUri: prepared.localUri,
+        durationSeconds: prepared.durationSeconds,
+        cameraView,
+        clubType,
+        sizeBytes: prepared.sizeBytes,
+      });
+      const analysisId = await insertSwingAnalysis(result, {
+        videoId: prepared.videoId,
+        model,
       });
       setProgress('');
-      router.replace(`/coach/analysis/${res.analysisId}`);
+      router.replace(`/coach/analysis/${analysisId}`);
     } catch (e) {
       setError(
         e instanceof Error && /fetch|network/i.test(e.message)
           ? 'Upload failed — check your connection and try again.'
-          : 'Analysis could not be completed right now. Try again in a moment.',
+          : e instanceof Error && /frames|video/i.test(e.message)
+            ? e.message
+            : 'Analysis could not be completed right now. Try again in a moment.',
       );
       setStage('error');
     }
@@ -196,7 +223,7 @@ export default function RecordSwingScreen() {
             Analyzing your swing…
           </Text>
           <Text variant="caption" secondary center>
-            {progress || 'Gemini is watching the video — this can take up to a minute.'}
+            {progress || 'Analyzing your swing frames — this can take up to a minute.'}
           </Text>
         </Animated.View>
       ) : (
@@ -207,7 +234,6 @@ export default function RecordSwingScreen() {
             fullWidth
             icon={<Camera size={20} color="#F7F4EC" />}
             onPress={startCamera}
-            disabled={!isClerkConfigured()}
           />
           <Button
             title="Upload from library"
@@ -216,15 +242,7 @@ export default function RecordSwingScreen() {
             fullWidth
             icon={<Film size={18} color={colors.text} />}
             onPress={pickFromLibrary}
-            disabled={!isClerkConfigured()}
           />
-          {!isClerkConfigured() ? (
-            <Card>
-              <Text variant="caption" secondary>
-                Swing analysis needs a signed-in account and the Arcfore API running. See README → env setup.
-              </Text>
-            </Card>
-          ) : null}
         </View>
       )}
 
@@ -241,8 +259,8 @@ export default function RecordSwingScreen() {
         <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' }}>
           <Upload size={15} color={colors.textSecondary} style={{ marginTop: 2 }} />
           <Text variant="caption" secondary style={{ flex: 1 }}>
-            Videos upload privately to your account, analyzed by Google Gemini, and are deletable any time.
-            They're never shared or used for anything else.
+            Your video stays on this device. Arcfore extracts a handful of frames and sends only those
+            to the AI for analysis — the full video is never uploaded.
           </Text>
         </View>
       </Card>

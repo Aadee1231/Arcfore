@@ -1,20 +1,19 @@
-import React, { useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
+import { Stack, useRouter } from 'expo-router';
 import { Plus, Ruler, Trash2 } from 'lucide-react-native';
+import { useState } from 'react';
+import { FlatList, StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { SegmentedControl } from '@/components/ui/Chip';
+import { Input } from '@/components/ui/Input';
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { SegmentedControl } from '@/components/ui/Chip';
+import { recommendClub } from '@/lib/clubs/recommend';
+import { useClubMutations, useClubs, useProfile } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { useClubs, useClubMutations, useProfile } from '@/lib/hooks/data';
-import { recommendClub } from '@/lib/clubs/recommend';
-import { isClerkConfigured } from '@/lib/config';
 import type { UserClub } from '@/types/domain';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -24,10 +23,10 @@ const TYPE_LABEL: Record<string, string> = {
 export default function BagScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuthUser();
-  const clubs = useClubs(isClerkConfigured() ? userId : null);
-  const { remove } = useClubMutations(isClerkConfigured() ? userId : null);
-  useProfile(isClerkConfigured() ? userId : null);
+  useAuthUser();
+  const clubs = useClubs();
+  const { remove } = useClubMutations();
+  useProfile();
 
   const [target, setTarget] = useState('');
   const [risk, setRisk] = useState<'balanced' | 'conservative'>('balanced');

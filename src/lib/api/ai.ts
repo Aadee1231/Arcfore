@@ -1,53 +1,78 @@
 import { apiPost, apiUpload } from '@/lib/api/client';
 import {
-  coachResponseSchema,
-  recapResponseSchema,
-  swingAnalysisResultSchema,
-  type RecapResponse,
-  type SwingAnalysisResult,
+    coachResponseSchema,
+    recapResponseSchema,
+    swingAnalysisResultSchema,
+    type RecapResponse,
+    type SwingAnalysisResult,
 } from '@/lib/validation/schemas';
 import type { SwingCameraView } from '@/types/domain';
+import { z } from 'zod';
 
-export interface SwingAnalysisAccepted {
-  analysisId: string;
-  videoId: string | null;
-  result: SwingAnalysisResult;
+export interface SwingFrameUpload {
+  /** local file:// uri of the extracted frame image */
+  uri: string;
+  /** seconds into the source video this frame was captured at */
+  timestampSec: number;
 }
 
-/** Upload a swing video for Gemini analysis. Multipart; may take 30–120s. */
-export async function analyzeSwingVideo(opts: {
-  fileUri: string;
-  fileName?: string;
-  mimeType?: string;
-  durationSeconds?: number;
+const swingResponseSchema = z.object({
+  result: swingAnalysisResultSchema,
+  model: z.string(),
+});
+
+/**
+ * Upload extracted swing frames for vision analysis.
+ * The video itself never leaves the device — only sampled JPEG frames with
+ * their timestamps. The server is stateless; the app persists the result.
+ */
+export async function analyzeSwingFrames(opts: {
+  frames: SwingFrameUpload[];
   cameraView: SwingCameraView;
   clubType?: string;
-}): Promise<SwingAnalysisAccepted> {
+  durationSeconds?: number;
+}): Promise<{ result: SwingAnalysisResult; model: string }> {
   const form = new FormData();
-  const name = opts.fileName ?? `swing-${Date.now()}.mp4`;
-  // React Native FormData file part
-  form.append('video', {
-    uri: opts.fileUri,
-    name,
-    type: opts.mimeType ?? 'video/mp4',
-  } as unknown as Blob);
+  opts.frames.forEach((f, i) => {
+    form.append('frames', {
+      uri: f.uri,
+      name: `frame-${i}.jpg`,
+      type: 'image/jpeg',
+    } as unknown as Blob);
+  });
+  form.append(
+    'timestamps',
+    JSON.stringify(opts.frames.map((f) => f.timestampSec)),
+  );
   form.append('cameraView', opts.cameraView);
   if (opts.clubType) form.append('clubType', opts.clubType);
   if (opts.durationSeconds) form.append('durationSeconds', String(opts.durationSeconds));
 
   const res = await apiUpload<unknown>('/v1/ai/swing-analyses', form);
-  const wrapped = res as { analysisId: string; videoId: string | null; result: unknown };
-  const parsed = swingAnalysisResultSchema.safeParse(wrapped.result);
+  const parsed = swingResponseSchema.safeParse(res);
   if (!parsed.success) throw new Error('Analysis response did not match the expected format');
-  return { analysisId: wrapped.analysisId, videoId: wrapped.videoId, result: parsed.data };
+  return parsed.data;
 }
 
+export interface CoachContextBlock {
+  profileSummary: string;
+  bagSummary: string;
+  roundsSummary: string;
+  analysesSummary: string;
+  practiceSummary: string;
+}
+
+const coachReplySchema = coachResponseSchema;
+
+/** Conversational coach. Context + recent history are sent from the local DB;
+ * the server stays stateless. */
 export async function coachChat(
   message: string,
-  conversationId: string | null,
-): Promise<{ conversationId: string; reply: string; suggestedPrompts: string[] }> {
-  const res = await apiPost<unknown>('/v1/ai/coach', { message, conversationId });
-  const parsed = coachResponseSchema.safeParse(res);
+  context: CoachContextBlock,
+  history: { role: 'user' | 'assistant'; content: string }[],
+): Promise<{ reply: string; suggestedPrompts: string[] }> {
+  const res = await apiPost<unknown>('/v1/ai/coach', { message, context, history });
+  const parsed = coachReplySchema.safeParse(res);
   if (!parsed.success) throw new Error('Unexpected coach response');
   return parsed.data;
 }

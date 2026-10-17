@@ -1,29 +1,31 @@
+import { useAuthUser } from '@/lib/auth';
+import { useQueryClient } from '@tanstack/react-query';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
+import {
+    BookOpen,
+    ChevronRight,
+    Download,
+    Flag,
+    Hand,
+    LogOut,
+    Ruler,
+    Trash2
+} from 'lucide-react-native';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useAuthUser } from '@/lib/auth';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  BookOpen,
-  ChevronRight,
-  Flag,
-  Hand,
-  LogOut,
-  Ruler,
-  Trash2,
-  } from 'lucide-react-native';
 
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { SegmentedControl } from '@/components/ui/Chip';
 import { Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { SegmentedControl } from '@/components/ui/Chip';
+import { clearAllData, exportBackup } from '@/lib/db/repo';
+import { useProfile, useUpsertProfile } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { useProfile } from '@/lib/hooks/data';
-import { getSupabase, isSupabaseReady } from '@/lib/supabase';
-import { isClerkConfigured } from '@/lib/config';
-import type { SkillLevel, Units } from '@/types/domain';
+import type { SkillLevel } from '@/types/domain';
 
 function Row({
   icon,
@@ -58,32 +60,15 @@ function Row({
 export default function ProfileScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId, signOut } = useAuthUser();
+  const { signOut, isSignedIn } = useAuthUser();
   const { displayName, email: authEmail } = useAuthUser();
-  const profile = useProfile(isClerkConfigured() ? userId : null);
+  const profile = useProfile();
+  const upsert = useUpsertProfile();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
-  const updateUnits = useMutation({
-    mutationFn: async (units: Units) => {
-      if (!userId || !isSupabaseReady()) return;
-      const { error } = await getSupabase().from('profiles').update({ units }).eq('id', userId);
-      if (error) throw error;
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['profile', userId] }),
-  });
-
-  const updateSkill = useMutation({
-    mutationFn: async (skill_level: SkillLevel) => {
-      if (!userId || !isSupabaseReady()) return;
-      const { error } = await getSupabase().from('profiles').update({ skill_level }).eq('id', userId);
-      if (error) throw error;
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['profile', userId] }),
-  });
-
   const onSignOut = () => {
-    Alert.alert('Sign out?', 'Your data stays on this device and in your account.', [
+    Alert.alert('Sign out?', 'Your data stays on this device.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',
@@ -97,17 +82,38 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const onExport = async () => {
+    try {
+      setBusy(true);
+      const backup = await exportBackup();
+      const uri = `${FileSystem.cacheDirectory}arcfore-backup-${Date.now()}.json`;
+      await FileSystem.writeAsStringAsync(uri, JSON.stringify(backup, null, 2));
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export Arcfore data' });
+      } else {
+        Alert.alert('Export saved', `Backup written to ${uri}`);
+      }
+    } catch {
+      Alert.alert('Export failed', 'Could not create a backup right now.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onDelete = () => {
     Alert.alert(
-      'Delete account',
-      'This permanently removes your profile, rounds, swing videos, and analyses. This cannot be undone.',
+      'Erase all data on this device?',
+      'This permanently removes your profile, rounds, swing videos, analyses, and practice history stored locally. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete everything',
+          text: 'Erase everything',
           style: 'destructive',
-          onPress: () =>
-            Alert.alert('Contact support', 'Email support@aadeec.com with subject "Delete Arcfore account" and your account will be fully removed within 7 days.'),
+          onPress: async () => {
+            await clearAllData();
+            await qc.invalidateQueries();
+            router.replace('/');
+          },
         },
       ],
     );
@@ -149,7 +155,7 @@ export default function ProfileScreen() {
             label: s[0].toUpperCase() + s.slice(1),
           }))}
           value={p?.skillLevel ?? 'intermediate'}
-          onChange={(v) => updateSkill.mutate(v)}
+          onChange={(v) => upsert.mutate({ skillLevel: v })}
         />
       </View>
       <Row
@@ -176,7 +182,7 @@ export default function ProfileScreen() {
             { value: 'meters', label: 'Meters' },
           ]}
           value={p?.units ?? 'yards'}
-          onChange={(v) => updateUnits.mutate(v)}
+          onChange={(v) => upsert.mutate({ units: v })}
         />
       </View>
       <Row
@@ -185,20 +191,29 @@ export default function ProfileScreen() {
         onPress={() => router.push('/legal')}
       />
 
+      <SectionHeader title="Data" />
+      <Row
+        icon={<Download size={18} color={colors.forest} />}
+        label="Export my data (JSON)"
+        onPress={() => void onExport()}
+      />
+
       <SectionHeader title="Account" />
+      {isSignedIn ? (
+        <Card>
+          <Button
+            title={busy ? 'Signing out…' : 'Sign out'}
+            variant="outline"
+            fullWidth
+            loading={busy}
+            icon={<LogOut size={16} color={colors.text} />}
+            onPress={onSignOut}
+          />
+        </Card>
+      ) : null}
       <Card>
         <Button
-          title={busy ? 'Signing out…' : 'Sign out'}
-          variant="outline"
-          fullWidth
-          loading={busy}
-          icon={<LogOut size={16} color={colors.text} />}
-          onPress={onSignOut}
-        />
-      </Card>
-      <Card>
-        <Button
-          title="Delete account"
+          title="Erase all data on this device"
           variant="ghost"
           fullWidth
           icon={<Trash2 size={16} color={colors.danger} />}

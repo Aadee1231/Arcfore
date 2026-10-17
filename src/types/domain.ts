@@ -1,4 +1,4 @@
-/** Domain model shared across app code. DB row shapes mirror supabase/migrations. */
+/** Domain model shared across app code. DB row shapes mirror lib/db/schema.ts. */
 
 export type Units = 'yards' | 'meters';
 export type Handedness = 'right' | 'left';

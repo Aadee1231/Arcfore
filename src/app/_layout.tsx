@@ -1,8 +1,5 @@
-import React, { useCallback, useEffect, useRef } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import * as SplashScreen from 'expo-splash-screen';
-import { useFonts } from 'expo-font';
+import { ClerkProvider } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
 import {
   Fraunces_500Medium,
   Fraunces_600SemiBold,
@@ -15,19 +12,23 @@ import {
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
-import { ClerkProvider } from '@clerk/expo';
-import { tokenCache } from '@clerk/expo/token-cache';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useFonts } from 'expo-font';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AppThemeProvider } from '@/theme/ThemeProvider';
-import { config, isClerkConfigured } from '@/lib/config';
-import { registerSupabaseTokenProvider } from '@/lib/supabase';
 import { registerApiTokenGetter } from '@/lib/api/client';
+import { AuthContext, ClerkAuthBridge, LOCAL_AUTH, useAuthUser } from '@/lib/auth';
+import { config, isClerkConfigured } from '@/lib/config';
+import { initDb } from '@/lib/db/database';
+import { getProfile } from '@/lib/db/repo';
+import { initPersistence } from '@/lib/offline/sync';
 import { useActiveRound } from '@/store/activeRound';
-import { initSyncEngine } from '@/lib/offline/sync';
-import { AuthContext, ClerkAuthBridge, DEV_AUTH, useAuthUser } from '@/lib/auth';
+import { AppThemeProvider } from '@/theme/ThemeProvider';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -36,9 +37,10 @@ const queryClient = new QueryClient({
 });
 
 function AuthWiring({ children }: { children: React.ReactNode }) {
-  const { getToken, isLoaded, isSignedIn } = useAuthUser();
+  const { getToken } = useAuthUser();
   const hydrate = useActiveRound((s) => s.hydrate);
   const hydrated = useActiveRound((s) => s.hydrated);
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
 
   const getFreshToken = useCallback(async () => {
     try {
@@ -50,9 +52,24 @@ function AuthWiring({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     registerApiTokenGetter(getFreshToken);
-    registerSupabaseTokenProvider(getFreshToken);
-    initSyncEngine();
-    void hydrate();
+    initPersistence();
+    // Local DB is the source of truth — open + migrate before hydrating.
+    void initDb()
+      .then(async () => {
+        await hydrate();
+        const profile = await getProfile().catch(() => null);
+        setNeedsOnboarding(profile == null);
+      })
+      .catch((e) => {
+        console.warn('Arcfore: DB init failed, retrying once:', e);
+        // One retry — a corrupt or busy DB should still let the app boot.
+        return initDb()
+          .then(async () => {
+            await hydrate();
+            setNeedsOnboarding((await getProfile().catch(() => null)) == null);
+          })
+          .catch(() => setNeedsOnboarding(false));
+      });
   }, [getFreshToken, hydrate]);
 
   const segments = useSegments();
@@ -60,17 +77,17 @@ function AuthWiring({ children }: { children: React.ReactNode }) {
   const navReady = useRef(false);
 
   useEffect(() => {
-    if (!isLoaded || !hydrated || !navReady.current) return;
-    const inAuth = segments[0] === '(auth)';
+    if (!hydrated || needsOnboarding == null || !navReady.current) return;
     const inOnboarding = segments[0] === '(onboarding)';
-    if (!isSignedIn && !inAuth) {
-      router.replace('/(auth)/sign-in');
-    } else if (isSignedIn && (inAuth || !segments[0])) {
+    const atRoot = !segments[0];
+    // Everything works without an account — only local-profile setup is gated,
+    // and only at cold start (the onboarding flow routes itself to tabs).
+    if (needsOnboarding && !inOnboarding && atRoot) {
+      router.replace('/(onboarding)');
+    } else if (!needsOnboarding && atRoot) {
       router.replace('/(tabs)');
-    } else if (isSignedIn && inOnboarding) {
-      // onboarding screen manages its own exit
     }
-  }, [isLoaded, isSignedIn, hydrated, segments, router]);
+  }, [hydrated, needsOnboarding, segments, router]);
 
   useEffect(() => {
     navReady.current = true;
@@ -112,7 +129,6 @@ function Inner() {
         <Stack.Screen name="round/scorecard" />
         <Stack.Screen name="round/[id]/summary" />
         <Stack.Screen name="round/[id]/share" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="round/join" options={{ presentation: 'modal' }} />
         <Stack.Screen name="coach/record" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="coach/analysis/[id]" />
         <Stack.Screen name="coach/chat" />
@@ -138,10 +154,12 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 
-  // Clerk missing → dev/preview mode: DEV_AUTH identity, no Clerk hooks anywhere.
+  // Local-first: no sign-in required. Clerk is optional — when configured the
+  // provider is mounted so users CAN sign in (sync/backup later), but nothing
+  // is gated on it.
   if (!isClerkConfigured() || !publishableKey) {
     return (
-      <AuthContext.Provider value={DEV_AUTH}>
+      <AuthContext.Provider value={LOCAL_AUTH}>
         <AuthWiring>{tree}</AuthWiring>
       </AuthContext.Provider>
     );

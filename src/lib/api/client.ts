@@ -1,4 +1,5 @@
 import { config } from '@/lib/config';
+import { getDeviceId } from '@/lib/device';
 
 export class ApiError extends Error {
   status: number;
@@ -12,16 +13,18 @@ export class ApiError extends Error {
 
 let tokenGetter: (() => Promise<string | null>) | null = null;
 
-/** Called once by the auth layer so API requests carry the Clerk session JWT. */
+/** Called once by the auth layer so API requests can carry the Clerk session
+ * JWT when the user is signed in (optional — the app works without it). */
 export function registerApiTokenGetter(getter: () => Promise<string | null>) {
   tokenGetter = getter;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { Accept: 'application/json' };
-  const token = await tokenGetter?.();
+  const token = await tokenGetter?.().catch(() => null);
   if (token) headers.Authorization = `Bearer ${token}`;
-  else if (config.devUserId) headers['x-dev-user-id'] = config.devUserId;
+  headers['x-device-id'] = await getDeviceId();
+  if (config.apiToken) headers['x-arcfore-key'] = config.apiToken;
   return headers;
 }
 

@@ -1,30 +1,28 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { useAuthUser } from '@/lib/auth';
+import { useQuery } from '@tanstack/react-query';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Share2, Sparkles } from 'lucide-react-native';
+import { useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 
+import { ScorecardGrid } from '@/components/golf/ScorecardGrid';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { ScorecardGrid } from '@/components/golf/ScorecardGrid';
+import { generateRecap } from '@/lib/api/ai';
+import { useProfile } from '@/lib/hooks/data';
+import { fetchLocalRound } from '@/lib/offline/sync';
+import {
+    findScore,
+    formatToPar,
+    participantStats,
+    playedHoleNumbers,
+    scoreName,
+} from '@/lib/scoring/engine';
+import { useActiveRound } from '@/store/activeRound';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { useActiveRound } from '@/store/activeRound';
-import {
-  findScore,
-  formatToPar,
-  participantStats,
-  playedHoleNumbers,
-  scoreName,
-} from '@/lib/scoring/engine';
-import { fetchRemoteRoundDomain } from '@/lib/offline/sync';
-import { generateRecap } from '@/lib/api/ai';
-import { config, isClerkConfigured, isSupabaseConfigured } from '@/lib/config';
-import { DEMO_ROUNDS } from '@/lib/demo/data';
-import { useProfile } from '@/lib/hooks/data';
 
 export default function RoundSummaryScreen() {
   const colors = useColors();
@@ -33,18 +31,17 @@ export default function RoundSummaryScreen() {
   const { userId } = useAuthUser();
   const activeRound = useActiveRound((s) => s.round);
 
-  const demoRound = config.demoMode ? DEMO_ROUNDS.find((r) => r.id === id) : undefined;
-  const round = activeRound?.id === id ? activeRound : (demoRound ?? null);
+  const round = activeRound?.id === id ? activeRound : null;
 
-  // If the round isn't the active one (viewing history), fetch it.
-  const remote = useQuery({
+  // If the round isn't the active one (viewing history), fetch it locally.
+  const local = useQuery({
     queryKey: ['round', id],
-    queryFn: () => fetchRemoteRoundDomain(id!),
-    enabled: !!id && !round && !config.demoMode && isSupabaseConfigured(),
+    queryFn: () => fetchLocalRound(id!),
+    enabled: !!id && !round,
   });
-  const shown = round ?? remote.data ?? null;
+  const shown = round ?? local.data ?? null;
 
-  const profile = useProfile(isClerkConfigured() ? userId : null);
+  const profile = useProfile();
 
   const stats = useMemo(() => {
     if (!shown) return [];
@@ -94,7 +91,7 @@ export default function RoundSummaryScreen() {
   const recap = useQuery({
     queryKey: ['recap', id],
     queryFn: () => generateRecap(recapInput!),
-    enabled: !!recapInput && !config.demoMode,
+    enabled: !!recapInput,
     staleTime: Infinity,
     retry: false,
   });
@@ -104,7 +101,7 @@ export default function RoundSummaryScreen() {
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Round' }} />
         <Text variant="body" secondary>
-          {remote.isFetching ? 'Loading round…' : 'Round not found.'}
+          {local.isFetching ? 'Loading round…' : 'Round not found.'}
         </Text>
       </View>
     );

@@ -1,16 +1,30 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { Redis } from '@upstash/redis';
+import { env } from './env.js';
 
 /**
- * Course-data cache: Postgres `api_cache` table when Supabase is configured,
- * plus an in-memory L1 for hot keys. Protects the GCA free-tier budget
- * (30 req/day) by deduping in-flight requests too.
+ * Course-data cache: in-memory TTL map + in-flight request dedupe, with an
+ * optional Upstash Redis L2 shared across serverless instances (when
+ * UPSTASH_REDIS_REST_* are configured). Protects the GCA free-tier budget
+ * (30 req/day). The app additionally caches course detail in its local SQLite
+ * DB, so repeated lookups across restarts don't hit the API.
  */
 
 const l1 = new Map<string, { payload: unknown; expiresAt: number }>();
 const inflight = new Map<string, Promise<unknown>>();
 
+let redis: Redis | null | undefined;
+
+function getRedis(): Redis | null {
+  if (redis === undefined) {
+    redis =
+      env.upstashRedisUrl && env.upstashRedisToken
+        ? new Redis({ url: env.upstashRedisUrl, token: env.upstashRedisToken })
+        : null;
+  }
+  return redis;
+}
+
 export async function cached<T>(
-  sb: SupabaseClient | null,
   key: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
@@ -19,21 +33,16 @@ export async function cached<T>(
   const hit = l1.get(key);
   if (hit && hit.expiresAt > nowMs) return hit.payload as T;
 
-  if (sb) {
+  const r = getRedis();
+  if (r) {
     try {
-      const { data } = await sb
-        .from('api_cache')
-        .select('payload, expires_at')
-        .eq('key', key)
-        .gt('expires_at', new Date(nowMs).toISOString())
-        .maybeSingle();
-      if (data?.payload != null) {
-        const payload = data.payload as T;
-        l1.set(key, { payload, expiresAt: new Date(data.expires_at).getTime() });
-        return payload;
+      const l2 = await r.get<T>(key);
+      if (l2 != null) {
+        l1.set(key, { payload: l2, expiresAt: nowMs + ttlSeconds * 1000 });
+        return l2;
       }
     } catch {
-      // cache read failure shouldn't block the request
+      // Redis hiccup — fall through to the provider fetch
     }
   }
 
@@ -43,17 +52,12 @@ export async function cached<T>(
 
   const p = (async () => {
     const payload = await fetcher();
-    const expiresAt = nowMs + ttlSeconds * 1000;
-    l1.set(key, { payload, expiresAt });
-    if (sb) {
+    l1.set(key, { payload, expiresAt: nowMs + ttlSeconds * 1000 });
+    if (r) {
       try {
-        await sb.from('api_cache').upsert({
-          key,
-          payload: payload as Record<string, unknown>,
-          expires_at: new Date(expiresAt).toISOString(),
-        });
+        await r.set(key, payload as never, { ex: ttlSeconds });
       } catch {
-        // non-fatal
+        // best-effort L2 write
       }
     }
     return payload;
@@ -69,4 +73,5 @@ export async function cached<T>(
 export function _resetForTests() {
   l1.clear();
   inflight.clear();
+  redis = undefined;
 }

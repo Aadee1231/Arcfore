@@ -1,24 +1,23 @@
-import React, { useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
+import { Stack, useRouter } from 'expo-router';
 import { Check, ChevronDown, ChevronUp, Target } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import { FlatList, StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import { DRILL_CATALOG } from '@/lib/drills';
+import {
+    useDrills,
+    useLogPractice,
+    useOneThing,
+    usePracticeSessions,
+    useResolveOneThing,
+} from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import {
-  useDrills,
-  useLogPractice,
-  useOneThing,
-  usePracticeSessions,
-  useResolveOneThing,
-} from '@/lib/hooks/data';
-import { DRILL_CATALOG } from '@/lib/drills';
-import { isClerkConfigured } from '@/lib/config';
 import type { PracticeDrill } from '@/types/domain';
 
 const WEEK_MS = 7 * 24 * 3600 * 1000;
@@ -35,12 +34,12 @@ function completedDrillIdsThisWeek(sessions: { drillId: string; completedAt: str
 export default function PracticeScreen() {
   const colors = useColors();
   useRouter();
-  const { userId } = useAuthUser();
+  useAuthUser();
   const drills = useDrills();
-  const sessions = usePracticeSessions(isClerkConfigured() ? userId : null);
-  const oneThing = useOneThing(isClerkConfigured() ? userId : null);
-  const log = useLogPractice(isClerkConfigured() ? userId : null);
-  const resolve = useResolveOneThing(isClerkConfigured() ? userId : null);
+  const sessions = usePracticeSessions();
+  const oneThing = useOneThing();
+  const log = useLogPractice();
+  const resolve = useResolveOneThing();
   const [expanded, setExpanded] = useState<string | null>(null);
 
   // Prefer seeded DB drills; fall back to bundled catalog so the screen always works.
@@ -126,12 +125,12 @@ export default function PracticeScreen() {
                     variant={done ? 'outline' : 'primary'}
                     size="sm"
                     loading={log.isPending}
-                    disabled={!isClerkConfigured() || d.id.startsWith('local-')}
+                    disabled={d.id.startsWith('local-')}
                     onPress={() => log.mutate({ drillId: d.id, durationMinutes: d.durationMinutes })}
                   />
                   {d.id.startsWith('local-') ? (
                     <Text variant="micro" secondary>
-                      Apply the Supabase migration to log practice history.
+                      Practice logging will unlock once the drill catalog finishes loading.
                     </Text>
                   ) : null}
                 </View>

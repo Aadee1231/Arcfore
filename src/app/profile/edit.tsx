@@ -1,25 +1,24 @@
-import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
+import { Stack, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { Screen } from '@/components/ui/Screen';
-import { Text } from '@/components/ui/Text';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { SegmentedControl } from '@/components/ui/Chip';
+import { Input } from '@/components/ui/Input';
+import { Screen } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
+import { useProfile, useUpsertProfile } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { useProfile, useUpsertProfile } from '@/lib/hooks/data';
-import { isClerkConfigured } from '@/lib/config';
 import type { Handedness, SkillLevel } from '@/types/domain';
 
 export default function EditProfileScreen() {
   useColors();
   const router = useRouter();
-  const { userId } = useAuthUser();
-  const profile = useProfile(isClerkConfigured() ? userId : null);
-  const upsert = useUpsertProfile(isClerkConfigured() ? userId : null);
+  useAuthUser();
+  const profile = useProfile();
+  const upsert = useUpsertProfile();
 
   const [name, setName] = useState('');
   const [handedness, setHandedness] = useState<Handedness>('right');

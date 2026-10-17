@@ -1,32 +1,30 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { useAuthUser } from '@/lib/auth';
+import { useQuery } from '@tanstack/react-query';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Plus, X } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { Screen, SectionHeader } from '@/components/ui/Screen';
-import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import { Chip, SegmentedControl } from '@/components/ui/Chip';
+import { Input } from '@/components/ui/Input';
+import { Screen, SectionHeader } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
+import { getCourse } from '@/lib/api/courses';
+import { useProfile } from '@/lib/hooks/data';
+import { newId } from '@/lib/id';
+import { useActiveRound } from '@/store/activeRound';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { getCourse } from '@/lib/api/courses';
-import { useActiveRound } from '@/store/activeRound';
-import { newId, shareCode } from '@/lib/id';
-import { isClerkConfigured } from '@/lib/config';
-import { useProfile } from '@/lib/hooks/data';
 import type { CourseDetail, RoundFormat, TeeSet } from '@/types/domain';
 
 export default function RoundSetupScreen() {
   const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ courseId?: string; manualCourse?: string }>();
-  const { userId } = useAuthUser();
-  const { displayName } = useAuthUser();
-  const profile = useProfile(isClerkConfigured() ? userId : null);
+  const { userId, displayName } = useAuthUser();
+  const profile = useProfile();
   const createRound = useActiveRound((s) => s.createRound);
   const activeRound = useActiveRound((s) => s.round);
 
@@ -52,7 +50,6 @@ export default function RoundSetupScreen() {
   const [teeId, setTeeId] = useState<string | null>(null);
   const [guestNames, setGuestNames] = useState<string[]>([]);
   const [newGuest, setNewGuest] = useState('');
-  const [multiDevice, setMultiDevice] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const tee: TeeSet | null = useMemo(() => {
@@ -85,7 +82,7 @@ export default function RoundSetupScreen() {
       setError('You already have a round in progress — finish or abandon it first.');
       return;
     }
-    const owner = isClerkConfigured() ? userId : 'dev-preview';
+    const owner = userId ?? 'local-user';
     const myName =
       profile.data?.displayName ?? displayName ?? 'Me';
 
@@ -113,8 +110,8 @@ export default function RoundSetupScreen() {
       holesPlanned,
       startingHole: holesPlanned === 9 && course.holeCount === 18 ? startingHole : 1,
       format,
-      isMultiDevice: multiDevice,
-      shareCode: multiDevice ? shareCode() : null,
+      isMultiDevice: false,
+      shareCode: null,
       holeData,
       participants: [
         { userId: owner ?? null, displayName: myName, isGuest: false, teeLabel: tee?.name ?? null },
@@ -265,20 +262,6 @@ export default function RoundSetupScreen() {
               </Text>
             </Card>
 
-            <Card onPress={() => setMultiDevice(!multiDevice)}>
-              <View style={styles.multiRow}>
-                <View style={{ flex: 1 }}>
-                  <Text variant="bodyStrong">Shared live round</Text>
-                  <Text variant="caption" secondary>
-                    Friends on their own phones join with a code and score together in real time.
-                  </Text>
-                </View>
-                <View style={[styles.toggle, { backgroundColor: multiDevice ? colors.forest : colors.sage }]}>
-                  <View style={[styles.knob, multiDevice && { transform: [{ translateX: 18 }] }]} />
-                </View>
-              </View>
-            </Card>
-
             {error ? (
               <Text variant="caption" style={{ color: colors.danger }}>
                 {error}
@@ -311,7 +294,4 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   addGuestRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginTop: spacing.sm },
-  multiRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  toggle: { width: 44, height: 26, borderRadius: 13, padding: 3 },
-  knob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' },
 });

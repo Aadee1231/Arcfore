@@ -1,24 +1,26 @@
-import React, { useRef, useState } from 'react';
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
 import { useMutation } from '@tanstack/react-query';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { Send, Sparkles } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+    FlatList,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    StyleSheet,
+    View,
+} from 'react-native';
 
-import { Text } from '@/components/ui/Text';
-import { Input } from '@/components/ui/Input';
 import { Chip } from '@/components/ui/Chip';
+import { Input } from '@/components/ui/Input';
+import { Text } from '@/components/ui/Text';
+import { coachChat } from '@/lib/api/ai';
+import { buildCoachContext } from '@/lib/coach/context';
+import { addCoachMessage, createConversation } from '@/lib/db/repo';
+import { useConversationMessages } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/theme';
-import { coachChat } from '@/lib/api/ai';
-import { isClerkConfigured } from '@/lib/config';
 
 interface Msg {
   id: string;
@@ -36,20 +38,44 @@ const DEFAULT_PROMPTS = [
 
 export default function CoachChatScreen() {
   const colors = useColors();
-  const params = useLocalSearchParams<{ prefill?: string }>();
+  const params = useLocalSearchParams<{ prefill?: string; conversation?: string }>();
   useAuthUser();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState(params.prefill ?? '');
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(params.conversation ?? null);
   const [suggested, setSuggested] = useState<string[]>(DEFAULT_PROMPTS);
   const listRef = useRef<FlatList<Msg>>(null);
+  const hydrated = useRef(false);
+
+  // Resume a previous conversation when opened with ?conversation=<id>
+  const saved = useConversationMessages(conversationId);
+  useEffect(() => {
+    if (!hydrated.current && saved.data?.length) {
+      hydrated.current = true;
+      setMessages(saved.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+    }
+  }, [saved.data]);
 
   const send = useMutation({
     mutationFn: async (text: string) => {
-      return coachChat(text, conversationId);
+      // Lazily create a local conversation + persist the user message.
+      let convId = conversationId;
+      if (!convId) {
+        convId = await createConversation(text);
+        setConversationId(convId);
+      }
+      await addCoachMessage(convId, 'user', text);
+
+      const context = await buildCoachContext();
+      const history = messages
+        .filter((m) => !m.pending)
+        .slice(-20)
+        .map((m) => ({ role: m.role, content: m.content }));
+      const res = await coachChat(text, context, history);
+      await addCoachMessage(convId, 'assistant', res.reply);
+      return res;
     },
     onSuccess: (res) => {
-      setConversationId(res.conversationId);
       setSuggested(res.suggestedPrompts.length ? res.suggestedPrompts : suggested);
       setMessages((m) => [
         ...m.filter((x) => !x.pending),
@@ -160,7 +186,7 @@ export default function CoachChatScreen() {
           />
           <Pressable
             onPress={() => sendMessage()}
-            disabled={!input.trim() || send.isPending || !isClerkConfigured()}
+            disabled={!input.trim() || send.isPending}
             style={[
               styles.sendBtn,
               { backgroundColor: colors.forest, opacity: input.trim() && !send.isPending ? 1 : 0.4 },
@@ -170,11 +196,6 @@ export default function CoachChatScreen() {
             <Send size={18} color="#F7F4EC" />
           </Pressable>
         </View>
-        {!isClerkConfigured() ? (
-          <Text variant="micro" secondary center style={{ paddingBottom: 8 }}>
-            Sign in and configure the Arcfore API to chat with the coach.
-          </Text>
-        ) : null}
       </KeyboardAvoidingView>
     </View>
   );

@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "arcfore",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.arcfore.app",
@@ -80,7 +79,8 @@
           "photosPermission": "Allow Arcfore to save share cards to your photos.",
           "savePhotosPermission": "Allow Arcfore to save share cards to your photos."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,19 +1,19 @@
-import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
 import { useMutation } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
+import { Flag } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, SlideInRight } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Flag } from 'lucide-react-native';
 
+import { Button } from '@/components/ui/Button';
+import { Chip, SegmentedControl } from '@/components/ui/Chip';
+import { Input } from '@/components/ui/Input';
+import { Text } from '@/components/ui/Text';
+import { useUpsertProfile } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/theme';
-import { getSupabase, isSupabaseReady } from '@/lib/supabase';
-import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Chip, SegmentedControl } from '@/components/ui/Chip';
 import type { Handedness, SkillLevel, Units } from '@/types/domain';
 
 const GOALS = [
@@ -26,7 +26,7 @@ type Step = 'welcome' | 'skill' | 'goal' | 'details' | 'done';
 export default function Onboarding() {
   const colors = useColors();
   const router = useRouter();
-  const { userId, displayName: authName, email } = useAuthUser();
+  const { displayName: authName, email } = useAuthUser();
 
   const [step, setStep] = useState<Step>('welcome');
   const [displayName, setDisplayName] = useState(
@@ -42,21 +42,18 @@ export default function Onboarding() {
   const steps: Step[] = useMemo(() => ['welcome', 'skill', 'goal', 'details'], []);
   const stepIndex = steps.indexOf(step);
 
+  const upsert = useUpsertProfile();
   const save = useMutation({
     mutationFn: async () => {
-      if (!userId) throw new Error('Not signed in');
-      if (!isSupabaseReady()) return; // offline dev mode — skip persistence
-      const { error: err } = await getSupabase().from('profiles').upsert({
-        id: userId,
-        display_name: displayName?.trim() || 'Golfer',
-        skill_level: skillLevel,
-        primary_goal: goal,
+      await upsert.mutateAsync({
+        displayName: displayName?.trim() || 'Golfer',
+        skillLevel,
+        primaryGoal: goal,
         handedness,
         units,
-        typical_score: typicalScore ? parseInt(typicalScore, 10) : null,
-        onboarded_at: new Date().toISOString(),
+        typicalScore: typicalScore ? parseInt(typicalScore, 10) : null,
+        onboardedAt: new Date().toISOString(),
       });
-      if (err) throw err;
     },
     onSuccess: () => setStep('done'),
     onError: (e) => setError(e instanceof Error ? e.message : 'Could not save profile'),

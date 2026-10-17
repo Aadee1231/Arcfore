@@ -1,17 +1,16 @@
-import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { Screen } from '@/components/ui/Screen';
-import { Text } from '@/components/ui/Text';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Chip, SegmentedControl } from '@/components/ui/Chip';
+import { Input } from '@/components/ui/Input';
+import { Screen } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
+import { useClubMutations, useClubs } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { useClubMutations, useClubs } from '@/lib/hooks/data';
-import { isClerkConfigured } from '@/lib/config';
 import type { ClubType } from '@/types/domain';
 
 const TYPES: { value: ClubType; label: string }[] = [
@@ -28,9 +27,9 @@ export default function ClubEditScreen() {
   const colors = useColors();
   const router = useRouter();
   const { clubId } = useLocalSearchParams<{ clubId?: string }>();
-  const { userId } = useAuthUser();
-  const clubs = useClubs(isClerkConfigured() ? userId : null);
-  const { upsert } = useClubMutations(isClerkConfigured() ? userId : null);
+  useAuthUser();
+  const clubs = useClubs();
+  const { upsert } = useClubMutations();
   const existing = clubs.data?.find((c) => c.id === clubId);
 
   const [clubType, setClubType] = useState<ClubType>(existing?.clubType ?? 'iron');

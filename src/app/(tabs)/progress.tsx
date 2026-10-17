@@ -1,19 +1,18 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
+import { useRouter } from 'expo-router';
 import { BarChart3 } from 'lucide-react-native';
+import { useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 
+import { TrendChart } from '@/components/charts/TrendChart';
+import { Card } from '@/components/ui/Card';
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { TrendChart } from '@/components/charts/TrendChart';
+import { careerStats, unofficialHandicapEstimate } from '@/lib/analytics/stats';
+import { usePracticeSessions, useRounds, useSwingAnalyses } from '@/lib/hooks/data';
+import { formatToPar } from '@/lib/scoring/engine';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing, tabularNums } from '@/theme/theme';
-import { useRounds, useSwingAnalyses, usePracticeSessions } from '@/lib/hooks/data';
-import { careerStats, unofficialHandicapEstimate } from '@/lib/analytics/stats';
-import { formatToPar } from '@/lib/scoring/engine';
-import { isClerkConfigured } from '@/lib/config';
 
 function StatTile({ label, value, sub, wide }: { label: string; value: string; sub?: string; wide?: boolean }) {
   const colors = useColors();
@@ -38,9 +37,9 @@ export default function ProgressScreen() {
   const colors = useColors();
   const router = useRouter();
   const { userId } = useAuthUser();
-  const rounds = useRounds(isClerkConfigured() ? userId : null);
-  const analyses = useSwingAnalyses(isClerkConfigured() ? userId : null);
-  const practice = usePracticeSessions(isClerkConfigured() ? userId : null);
+  const rounds = useRounds();
+  const analyses = useSwingAnalyses();
+  const practice = usePracticeSessions();
 
   const stats = useMemo(() => {
     if (!userId || !rounds.data?.length) return null;

@@ -1,16 +1,16 @@
-import { create } from 'zustand';
-import type {
-  HoleScore,
-  Round,
-  RoundParticipant,
-  RoundStatus,
-  TeeHoleInfo,
-} from '@/types/domain';
-import type { OutboxMutation, ScorePatch } from '@/lib/offline/outbox';
-import { enqueue, mergeScores, mutationId } from '@/lib/offline/outbox';
-import { offlineStorage } from '@/lib/offline/storage';
-import { findScore, playedHoleNumbers } from '@/lib/scoring/engine';
+import * as repo from '@/lib/db/repo';
 import { newId } from '@/lib/id';
+import type { ScorePatch } from '@/lib/offline/outbox';
+import { mergeScores } from '@/lib/offline/outbox';
+import { findScore, playedHoleNumbers } from '@/lib/scoring/engine';
+import type {
+    HoleScore,
+    Round,
+    RoundParticipant,
+    RoundStatus,
+    TeeHoleInfo,
+} from '@/types/domain';
+import { create } from 'zustand';
 
 type UndoEntry = {
   participantId: string;
@@ -21,9 +21,6 @@ type UndoEntry = {
 interface ActiveRoundState {
   round: Round | null;
   hydrated: boolean;
-  syncing: boolean;
-  pendingCount: number;
-  lastSyncError: string | null;
   undoStack: UndoEntry[];
 
   hydrate: () => Promise<void>;
@@ -45,40 +42,30 @@ interface ActiveRoundState {
     holeData: TeeHoleInfo[];
     participants: Omit<RoundParticipant, 'id' | 'sortOrder'>[];
   }) => Round;
-  adoptRound: (round: Round) => void; // joining an existing round or restoring from server
+  adoptRound: (round: Round) => void; // restoring an existing round from the local DB
   updateScore: (participantId: string, holeNumber: number, patch: ScorePatch) => void;
   undoLast: () => void;
   setStatus: (status: RoundStatus) => void;
   addParticipant: (p: Omit<RoundParticipant, 'id' | 'sortOrder'>) => void;
-  applyRemoteScores: (remote: HoleScore[]) => void;
-  setSyncing: (v: boolean, error?: string | null) => void;
-  setPendingCount: (n: number) => void;
   clearRound: () => Promise<void>;
 }
 
 const now = () => new Date().toISOString();
 
-async function persist(round: Round | null, queue?: OutboxMutation[]) {
-  await offlineStorage.saveActiveRound(round);
-  if (queue) await offlineStorage.saveOutbox(queue);
-}
+/** Writes are fire-and-forget but serialized via repo's write queue; failures
+ * are logged — the in-memory state remains authoritative for the session and
+ * the next mutation retries persistence anyway. */
+const persist = (p: Promise<unknown>, what: string) =>
+  p.catch((e) => console.warn(`Arcfore: failed to persist ${what}:`, e));
 
 export const useActiveRound = create<ActiveRoundState>((set, get) => ({
   round: null,
   hydrated: false,
-  syncing: false,
-  pendingCount: 0,
-  lastSyncError: null,
   undoStack: [],
 
   hydrate: async () => {
-    const [round, queue] = await Promise.all([
-      offlineStorage.loadActiveRound(),
-      offlineStorage.loadOutbox(),
-    ]);
-    set({ round, pendingCount: queue.length, hydrated: true });
-    // Keep the outbox in memory too for sync engine access
-    _outbox = queue;
+    const round = await repo.getActiveRound().catch(() => null);
+    set({ round, hydrated: true });
   },
 
   createRound: (input) => {
@@ -106,24 +93,14 @@ export const useActiveRound = create<ActiveRoundState>((set, get) => ({
       participants: input.participants.map((p, i) => ({ ...p, id: newId(), sortOrder: i })),
       scores: [],
     };
-    _outbox = enqueue(_outbox, { kind: 'round_upsert', id: mutationId(), round, clientTs: now() });
-    for (const p of round.participants) {
-      _outbox = enqueue(_outbox, {
-        kind: 'participant_upsert',
-        id: mutationId(),
-        roundId: round.id,
-        participant: p,
-        clientTs: now(),
-      });
-    }
-    set({ round, undoStack: [], pendingCount: _outbox.length });
-    void persist(round, _outbox);
+    set({ round, undoStack: [] });
+    persist(repo.saveRound(round), 'new round');
     return round;
   },
 
   adoptRound: (round) => {
     set({ round, undoStack: [] });
-    void persist(round);
+    persist(repo.saveRound(round), 'restored round');
   },
 
   updateScore: (participantId, holeNumber, patch) => {
@@ -150,31 +127,14 @@ export const useActiveRound = create<ActiveRoundState>((set, get) => ({
       nextScore,
     ];
     const nextRound = { ...round, scores, updatedAt: now() };
-
-    // Enqueue the COMPLETE cell state (not the partial patch) so the upsert is
-    // idempotent and never clobbers fields the user didn't edit.
-    _outbox = enqueue(_outbox, {
-      kind: 'score_upsert',
-      id: mutationId(),
-      roundId: round.id,
-      participantId,
-      holeNumber,
-      patch: {
-        strokes: nextScore.strokes,
-        putts: nextScore.putts,
-        fairway: nextScore.fairway,
-        gir: nextScore.gir,
-        penalties: nextScore.penalties,
-        notes: nextScore.notes,
-      },
-      clientTs: nextScore.updatedAt,
-    });
     set({
       round: nextRound,
       undoStack: [...undoStack.slice(-49), { participantId, holeNumber, previous }],
-      pendingCount: _outbox.length,
     });
-    void persist(nextRound, _outbox);
+    persist(
+      repo.upsertScoreCell(round.id, nextScore, nextRound.updatedAt),
+      `score ${participantId}:${holeNumber}`,
+    );
   },
 
   undoLast: () => {
@@ -195,27 +155,13 @@ export const useActiveRound = create<ActiveRoundState>((set, get) => ({
       ];
     }
     const nextRound = { ...round, scores, updatedAt: now() };
-    // Undo is itself a local edit — push the restored/cleared value
-    _outbox = enqueue(_outbox, {
-      kind: 'score_upsert',
-      id: mutationId(),
-      roundId: round.id,
-      participantId: entry.participantId,
-      holeNumber: entry.holeNumber,
-      patch: entry.previous
-        ? {
-            strokes: entry.previous.strokes,
-            putts: entry.previous.putts,
-            fairway: entry.previous.fairway,
-            gir: entry.previous.gir,
-            penalties: entry.previous.penalties,
-            notes: entry.previous.notes,
-          }
-        : { strokes: null, putts: null, fairway: null, gir: null, penalties: null, notes: null },
-      clientTs: now(),
-    });
-    set({ round: nextRound, undoStack: undoStack.slice(0, -1), pendingCount: _outbox.length });
-    void persist(nextRound, _outbox);
+    set({ round: nextRound, undoStack: undoStack.slice(0, -1) });
+    persist(
+      entry.previous
+        ? repo.upsertScoreCell(round.id, entry.previous, nextRound.updatedAt)
+        : repo.deleteScoreCell(round.id, entry.participantId, entry.holeNumber),
+      'undo',
+    );
   },
 
   setStatus: (status) => {
@@ -227,9 +173,8 @@ export const useActiveRound = create<ActiveRoundState>((set, get) => ({
       completedAt: status === 'completed' ? now() : round.completedAt,
       updatedAt: now(),
     };
-    _outbox = enqueue(_outbox, { kind: 'round_upsert', id: mutationId(), round: nextRound, clientTs: now() });
-    set({ round: nextRound, pendingCount: _outbox.length });
-    void persist(nextRound, _outbox);
+    set({ round: nextRound });
+    persist(repo.saveRound(nextRound), `round ${status}`);
   },
 
   addParticipant: (p) => {
@@ -237,51 +182,21 @@ export const useActiveRound = create<ActiveRoundState>((set, get) => ({
     if (!round) return;
     const participant: RoundParticipant = { ...p, id: newId(), sortOrder: round.participants.length };
     const nextRound = { ...round, participants: [...round.participants, participant], updatedAt: now() };
-    _outbox = enqueue(_outbox, {
-      kind: 'participant_upsert',
-      id: mutationId(),
-      roundId: round.id,
-      participant,
-      clientTs: now(),
-    });
-    set({ round: nextRound, pendingCount: _outbox.length });
-    void persist(nextRound, _outbox);
-  },
-
-  applyRemoteScores: (remote) => {
-    const { round } = get();
-    if (!round) return;
-    const merged = mergeScores(round.scores, remote);
-    if (merged.length === round.scores.length && merged.every((m) => round.scores.includes(m))) return;
-    const nextRound = { ...round, scores: merged };
     set({ round: nextRound });
-    void persist(nextRound);
+    persist(repo.saveRound(nextRound), 'new participant');
   },
-
-  setSyncing: (v, error = null) => set({ syncing: v, lastSyncError: error }),
-  setPendingCount: (n) => set({ pendingCount: n }),
 
   clearRound: async () => {
-    _outbox = _outbox.filter((m) => {
-      const { round } = get();
-      return !(m.kind === 'round_upsert' && round && m.round.id === round.id);
-    });
-    set({ round: null, undoStack: [], pendingCount: _outbox.length });
-    await persist(null, _outbox);
+    const { round } = get();
+    set({ round: null, undoStack: [] });
+    if (round) {
+      // Keep the record (abandoned) rather than deleting user history.
+      await repo
+        .updateRoundStatus(round.id, 'abandoned', round.completedAt)
+        .catch((e) => console.warn('Arcfore: failed to abandon round:', e));
+    }
   },
 }));
-
-/** Module-level pending queue shared with the sync engine (hydrated from storage on boot). */
-let _outbox: OutboxMutation[] = [];
-
-export function getOutbox(): OutboxMutation[] {
-  return _outbox;
-}
-export function setOutbox(queue: OutboxMutation[]) {
-  _outbox = queue;
-  useActiveRound.setState({ pendingCount: queue.length });
-  void offlineStorage.saveOutbox(queue);
-}
 
 /** Convenience selector helpers. */
 export function useHoleScore(participantId: string, holeNumber: number) {
@@ -294,3 +209,6 @@ export function usePlayedHoles() {
     s.round ? playedHoleNumbers({ holesPlanned: s.round.holesPlanned, startingHole: s.round.startingHole }) : [],
   );
 }
+
+/** Merge helper kept for tests/importers. */
+export { mergeScores };

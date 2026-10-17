@@ -1,39 +1,37 @@
-import React, { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useRouter } from 'expo-router';
 import { ChevronRight, Flag, Play, Scan, Target } from 'lucide-react-native';
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { TrendChart } from '@/components/charts/TrendChart';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { TrendChart } from '@/components/charts/TrendChart';
+import { careerStats } from '@/lib/analytics/stats';
+import {
+    useOneThing,
+    useProfile,
+    useRounds,
+    useSwingAnalyses,
+} from '@/lib/hooks/data';
+import { formatToPar, participantStats } from '@/lib/scoring/engine';
+import { useActiveRound } from '@/store/activeRound';
 import { useColors } from '@/theme/ThemeProvider';
 import { radius, spacing, } from '@/theme/theme';
-import { useActiveRound } from '@/store/activeRound';
-import {
-  useOneThing,
-  useProfile,
-  useRounds,
-  useSwingAnalyses,
-} from '@/lib/hooks/data';
-import { careerStats } from '@/lib/analytics/stats';
-import { formatToPar, participantStats } from '@/lib/scoring/engine';
-import { isClerkConfigured } from '@/lib/config';
 
 export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuthUser();
-  const { displayName } = useAuthUser();
-  const uid = isClerkConfigured() ? userId : 'dev-preview';
+  const { userId, displayName } = useAuthUser();
+  const uid = userId ?? 'local-user';
 
-  const profile = useProfile(isClerkConfigured() ? userId : null);
-  const rounds = useRounds(isClerkConfigured() ? userId : null);
-  const analyses = useSwingAnalyses(isClerkConfigured() ? userId : null);
-  const oneThing = useOneThing(isClerkConfigured() ? userId : null);
+  const profile = useProfile();
+  const rounds = useRounds();
+  const analyses = useSwingAnalyses();
+  const oneThing = useOneThing();
   const activeRound = useActiveRound((s) => s.round);
 
   const firstName =

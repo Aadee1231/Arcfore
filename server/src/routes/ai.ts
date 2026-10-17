@@ -1,238 +1,168 @@
 import { Hono } from 'hono';
-import { writeFile, unlink, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { env } from '../env.js';
-import { allowAiCall } from '../ratelimit.js';
-import { analyzeSwing, coachReply, roundRecap } from '../gemini.js';
-import { buildCoachContext } from '../context.js';
-import { getSupabaseAdmin } from '../supabase.js';
 import type { AuthContext } from '../auth.js';
+import { env } from '../env.js';
+import { analyzeSwingFrames, coachReply, roundRecap, type SwingFrameInput } from '../openai.js';
+import { checkAiBudget } from '../ratelimit.js';
 
 export const aiRouter = new Hono<{ Variables: { auth: AuthContext } }>();
 
-const VIDEO_MIME: Record<string, string> = {
-  mp4: 'video/mp4',
-  mov: 'video/quicktime',
-  m4v: 'video/x-m4v',
-  webm: 'video/webm',
-};
+const IMAGE_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 
 /**
- * POST /v1/ai/swing-analyses — multipart: video file + cameraView + clubType + durationSeconds.
- * Uploads to Gemini, runs structured analysis, stores video in Supabase Storage,
- * and persists the analysis row. Returns { analysisId, videoId, result }.
+ * Shared guard for AI endpoints: optional auth requirement, then daily-budget
+ * accounting (persistent in prod via Upstash; blocked if unprotected), then
+ * OpenAI configuration. Returns an error Response or null when the call may
+ * proceed.
+ */
+async function aiGate(
+  c: { get: (key: 'auth') => AuthContext; json: (body: unknown, status?: number) => Response },
+  clientLimit: number,
+  limitMessage: string,
+  notConfiguredMessage: string,
+): Promise<Response | null> {
+  const { clientId, clientIp } = c.get('auth');
+
+  if (env.aiRequireAuth && !clientId.startsWith('clerk:')) {
+    return c.json({ error: 'unauthorized', message: 'Sign-in is required for AI features' }, 401);
+  }
+
+  const budget = await checkAiBudget({ clientId, clientIp, clientLimit });
+  if (!budget.allowed) {
+    if (budget.reason === 'protection_not_configured') {
+      return c.json(
+        {
+          error: 'protection_not_configured',
+          message: 'AI features are temporarily unavailable',
+        },
+        503,
+      );
+    }
+    return c.json({ error: 'rate_limited', message: limitMessage }, 429);
+  }
+
+  if (!env.openaiApiKey) {
+    return c.json({ error: 'not_configured', message: notConfiguredMessage }, 503);
+  }
+  return null;
+}
+
+/**
+ * POST /v1/ai/swing-analyses
+ * Multipart: `frames` (1..N image parts), `timestamps` (JSON number[] of seconds,
+ * same order as frames), `cameraView`, `clubType`, `durationSeconds`.
+ * The device extracts frames locally — the video itself never leaves the phone.
+ * Stateless: the structured result is returned to the app, which persists it
+ * in its local database.
  */
 aiRouter.post('/swing-analyses', async (c) => {
-  const { userId } = c.get('auth');
-  const sb = getSupabaseAdmin();
-
-  if (!allowAiCall(userId, env.aiDailyLimitPerUser)) {
-    return c.json(
-      { error: 'rate_limited', message: 'Daily AI analysis limit reached — try again tomorrow' },
-      429,
-    );
-  }
-  if (!env.geminiApiKey) {
-    return c.json({ error: 'not_configured', message: 'AI analysis is not configured on the server' }, 503);
-  }
+  const gate = await aiGate(
+    c,
+    env.aiDailyLimitPerClient,
+    'Daily AI analysis limit reached — try again tomorrow',
+    'AI analysis is not configured on the server',
+  );
+  if (gate) return gate;
 
   const form = await c.req.formData();
-  const video = form.get('video');
-  if (!(video instanceof File)) {
-    return c.json({ error: 'bad_request', message: 'video file is required' }, 400);
+  const frameFiles = form.getAll('frames').filter((f): f is File => f instanceof File);
+  if (frameFiles.length === 0) {
+    return c.json({ error: 'bad_request', message: 'at least one frame image is required' }, 400);
   }
+  if (frameFiles.length > env.maxFrameCount) {
+    return c.json(
+      { error: 'bad_request', message: `too many frames (max ${env.maxFrameCount})` },
+      400,
+    );
+  }
+
+  let timestamps: number[] = [];
+  try {
+    const raw = JSON.parse(String(form.get('timestamps') ?? '[]'));
+    if (Array.isArray(raw)) timestamps = raw.map((n) => Number(n)).filter(Number.isFinite);
+  } catch {
+    return c.json({ error: 'bad_request', message: 'timestamps must be a JSON number array' }, 400);
+  }
+  while (timestamps.length < frameFiles.length) timestamps.push(0);
+
   const cameraView = String(form.get('cameraView') ?? 'unknown');
   const clubType = form.get('clubType') ? String(form.get('clubType')) : undefined;
   const durationSeconds = Number(form.get('durationSeconds') ?? '0') || undefined;
 
-  if (video.size > env.maxVideoBytes) {
-    return c.json(
-      { error: 'too_large', message: `Video exceeds the ${Math.round(env.maxVideoBytes / 1048576)}MB limit` },
-      413,
-    );
+  const frames: SwingFrameInput[] = [];
+  for (let i = 0; i < frameFiles.length; i++) {
+    const f = frameFiles[i];
+    if (f.size > env.maxFrameBytes) {
+      return c.json({ error: 'too_large', message: 'frame exceeds the size limit' }, 413);
+    }
+    const mimeType = IMAGE_MIME.has(f.type) ? f.type : 'image/jpeg';
+    const buf = Buffer.from(await f.arrayBuffer());
+    frames.push({
+      base64: buf.toString('base64'),
+      mimeType,
+      timestampSec: Math.max(0, timestamps[i] ?? 0),
+    });
   }
-  if (durationSeconds && durationSeconds > env.maxVideoSeconds) {
-    return c.json(
-      { error: 'too_long', message: `Keep swing videos under ${env.maxVideoSeconds} seconds` },
-      413,
-    );
-  }
-  const ext = (video.name.split('.').pop() ?? 'mp4').toLowerCase();
-  const mimeType = VIDEO_MIME[ext] ?? video.type ?? 'video/mp4';
-  if (!Object.values(VIDEO_MIME).includes(mimeType)) {
-    return c.json({ error: 'bad_request', message: 'Unsupported video format — use MP4 or MOV' }, 415);
-  }
-
-  // Write to temp file for the Files API upload (deleted in finally)
-  const tmpPath = join(tmpdir(), `arcfore-swing-${randomUUID()}.${ext}`);
-  const analysisId = randomUUID();
-  const videoId = randomUUID();
-  let videoRowId: string | null = null;
 
   try {
-    await mkdir(tmpdir(), { recursive: true });
-    await writeFile(tmpPath, Buffer.from(await video.arrayBuffer()));
-
-    // Create the DB rows up-front (status processing) so the app can poll/fail cleanly
-    if (sb) {
-      const storagePath = `${userId}/${videoId}.${ext}`;
-      const buf = await video.arrayBuffer();
-      const { error: upErr } = await sb.storage
-        .from('swing-videos')
-        .upload(storagePath, buf, { contentType: mimeType, upsert: false });
-      if (!upErr) {
-        const { data: vrow } = await sb
-          .from('swing_videos')
-          .insert({
-            id: videoId,
-            user_id: userId,
-            storage_path: storagePath,
-            duration_seconds: durationSeconds ?? null,
-            camera_view: cameraView,
-            club_type: clubType ?? null,
-            size_bytes: video.size,
-            status: 'processing',
-          })
-          .select('id')
-          .single();
-        videoRowId = vrow?.id ?? null;
-        await sb.from('swing_analyses').insert({
-          id: analysisId,
-          user_id: userId,
-          video_id: videoRowId,
-          status: 'processing',
-          model: env.geminiModel,
-        });
-      }
-    }
-
-    const result = await analyzeSwing({
-      filePath: tmpPath,
-      mimeType,
+    const result = await analyzeSwingFrames({
+      frames,
       cameraView,
       clubType,
       durationSeconds,
     });
-
-    if (sb) {
-      await sb
-        .from('swing_analyses')
-        .update({
-          status: 'completed',
-          summary: result.summary,
-          video_quality: result.videoQuality,
-          perspective: result.perspective,
-          strengths: result.strengths,
-          improvements: result.improvements,
-          top_priority: result.topPriority,
-          drill: result.drill,
-          phases: result.phases,
-          confidence: result.confidence,
-          limitations: result.limitations,
-          recording_tip: result.recordingTip,
-          raw: result as unknown as Record<string, unknown>,
-        })
-        .eq('id', analysisId);
-      if (videoRowId) {
-        await sb.from('swing_videos').update({ status: 'analyzed' }).eq('id', videoRowId);
-      }
-      // Feed the "One Thing" engine
-      if (result.topPriority && result.videoQuality !== 'unusable') {
-        await sb.from('one_thing_recommendations').insert({
-          user_id: userId,
-          focus: result.topPriority.title,
-          explanation: result.topPriority.explanation,
-          drill_name: result.drill?.name ?? null,
-          source: 'analysis',
-        });
-      }
-    }
-
-    return c.json({ analysisId, videoId: videoRowId, result });
+    return c.json({ result, model: env.openaiVisionModel });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Analysis failed';
-    if (sb) {
-      await sb
-        .from('swing_analyses')
-        .update({ status: 'failed', error: message })
-        .eq('id', analysisId);
-      if (videoRowId) {
-        await sb.from('swing_videos').update({ status: 'failed' }).eq('id', videoRowId);
-      }
-    }
-    const status = message.includes('Gemini is not configured') ? 503 : 502;
+    const status = message.includes('not configured') ? 503 : 502;
     return c.json({ error: 'analysis_failed', message }, status);
-  } finally {
-    await unlink(tmpPath).catch(() => {});
   }
 });
 
-/** POST /v1/ai/coach — { conversationId?, message } → contextual reply. */
+/** POST /v1/ai/coach — { message, context, history } → contextual reply. Stateless. */
 aiRouter.post('/coach', async (c) => {
-  const { userId } = c.get('auth');
-  if (!allowAiCall(userId, env.aiDailyLimitPerUser * 3)) {
-    return c.json({ error: 'rate_limited', message: 'Daily coach limit reached' }, 429);
-  }
-  if (!env.geminiApiKey) {
-    return c.json({ error: 'not_configured', message: 'AI coach is not configured on the server' }, 503);
-  }
-  const sb = getSupabaseAdmin();
+  const gate = await aiGate(
+    c,
+    env.aiDailyLimitPerClient * 3,
+    'Daily coach limit reached',
+    'AI coach is not configured on the server',
+  );
+  if (gate) return gate;
+
   const body = await c.req.json().catch(() => null);
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
   if (!message || message.length > 2000) {
     return c.json({ error: 'bad_request', message: 'message (1–2000 chars) is required' }, 400);
   }
 
-  const context = sb
-    ? await buildCoachContext(sb, userId)
-    : {
-        profileSummary: 'Profile unavailable (no database).',
-        bagSummary: 'Unavailable.',
-        roundsSummary: 'Unavailable.',
-        analysesSummary: 'Unavailable.',
-        practiceSummary: 'Unavailable.',
-      };
-
-  let conversationId: string | null = body?.conversationId ?? null;
-  let history: { role: 'user' | 'assistant'; content: string }[] = [];
-  if (sb) {
-    if (!conversationId) {
-      const { data: conv } = await sb
-        .from('coach_conversations')
-        .insert({ user_id: userId, title: message.slice(0, 60) })
-        .select('id')
-        .single();
-      conversationId = conv?.id ?? null;
-    } else {
-      // verify ownership
-      const { data: conv } = await sb
-        .from('coach_conversations')
-        .select('id')
-        .eq('id', conversationId)
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (!conv) return c.json({ error: 'not_found', message: 'Conversation not found' }, 404);
-      const { data: msgs } = await sb
-        .from('coach_messages')
-        .select('role, content')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
-        .limit(20);
-      history = (msgs ?? []).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-    }
-  }
+  const rawCtx = body?.context ?? {};
+  const str = (v: unknown, max = 4000) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const context = {
+    profileSummary: str(rawCtx.profileSummary),
+    bagSummary: str(rawCtx.bagSummary),
+    roundsSummary: str(rawCtx.roundsSummary, 6000),
+    analysesSummary: str(rawCtx.analysesSummary, 6000),
+    practiceSummary: str(rawCtx.practiceSummary),
+  };
+  const history = Array.isArray(body?.history)
+    ? body.history
+        .filter(
+          (m: unknown): m is { role: 'user' | 'assistant'; content: string } =>
+            typeof m === 'object' &&
+            m != null &&
+            ((m as { role?: string }).role === 'user' ||
+              (m as { role?: string }).role === 'assistant') &&
+            typeof (m as { content?: unknown }).content === 'string',
+        )
+        .slice(-12)
+        .map((m: { role: 'user' | 'assistant'; content: string }) => ({
+          role: m.role,
+          content: m.content.slice(0, 2000),
+        }))
+    : [];
 
   try {
     const { reply, suggestedPrompts } = await coachReply({ context, history, message });
-    if (sb && conversationId) {
-      await sb.from('coach_messages').insert([
-        { conversation_id: conversationId, role: 'user', content: message },
-        { conversation_id: conversationId, role: 'assistant', content: reply },
-      ]);
-    }
-    return c.json({ conversationId, reply, suggestedPrompts });
+    return c.json({ reply, suggestedPrompts });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Coach request failed';
     return c.json({ error: 'coach_failed', message: msg }, 502);
@@ -241,13 +171,13 @@ aiRouter.post('/coach', async (c) => {
 
 /** POST /v1/ai/recap — post-round recap from recorded stats. */
 aiRouter.post('/recap', async (c) => {
-  const { userId } = c.get('auth');
-  if (!allowAiCall(userId, env.aiDailyLimitPerUser)) {
-    return c.json({ error: 'rate_limited', message: 'Daily AI limit reached' }, 429);
-  }
-  if (!env.geminiApiKey) {
-    return c.json({ error: 'not_configured', message: 'AI recap is not configured' }, 503);
-  }
+  const gate = await aiGate(
+    c,
+    env.aiDailyLimitPerClient,
+    'Daily AI limit reached',
+    'AI recap is not configured',
+  );
+  if (gate) return gate;
   const input = await c.req.json().catch(() => null);
   if (!input || typeof input.courseName !== 'string') {
     return c.json({ error: 'bad_request', message: 'Invalid recap payload' }, 400);

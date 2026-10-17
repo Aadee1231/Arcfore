@@ -1,20 +1,18 @@
-import React from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ExternalLink, MapPin, Phone, Satellite } from 'lucide-react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Divider } from '@/components/ui/Divider';
 import { Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Divider } from '@/components/ui/Divider';
+import { getCourse, getGreenCenters } from '@/lib/api/courses';
+import { useAuthUser } from '@/lib/auth';
+import { useProfile } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing, tabularNums, } from '@/theme/theme';
-import { getCourse, getGreenCenters } from '@/lib/api/courses';
-import { useProfile } from '@/lib/hooks/data';
-import { useAuthUser } from '@/lib/auth';
-import { isClerkConfigured } from '@/lib/config';
 import type { TeeSet } from '@/types/domain';
 
 function TeeBlock({ tee, units }: { tee: TeeSet; units: 'yards' | 'meters' }) {
@@ -78,8 +76,8 @@ export default function CourseDetailScreen() {
   const colors = useColors();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userId } = useAuthUser();
-  const profile = useProfile(isClerkConfigured() ? userId : null);
+  useAuthUser();
+  const profile = useProfile();
   const units = profile.data?.units ?? 'yards';
 
   const providerId = decodeURIComponent(id ?? '');

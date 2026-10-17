@@ -1,44 +1,40 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  FlatList,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import * as Location from 'expo-location';
-import {
-  CloudOff,
-  Flag,
-  ListChecks,
-  RotateCcw,
-  Satellite,
-} from 'lucide-react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
-import { useQuery } from '@tanstack/react-query';
 import { useAuthUser } from '@/lib/auth';
+import { useQuery } from '@tanstack/react-query';
+import * as Location from 'expo-location';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import {
+    Flag,
+    ListChecks,
+    RotateCcw,
+    Satellite,
+} from 'lucide-react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+    FlatList,
+    Pressable,
+    StyleSheet,
+    View,
+} from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
-import { ScoreStepper } from '@/components/golf/ScoreStepper';
 import { ScoreCelebration } from '@/components/golf/Celebration';
+import { ScoreStepper } from '@/components/golf/ScoreStepper';
+import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { useColors } from '@/theme/ThemeProvider';
-import { radius, spacing, tabularNums } from '@/theme/theme';
-import { useActiveRound } from '@/store/activeRound';
-import { subscribeToRound } from '@/lib/realtime/roundChannel';
-import { flushOutbox } from '@/lib/offline/sync';
+import { Text } from '@/components/ui/Text';
 import { getGreenCenters } from '@/lib/api/courses';
 import { distanceInUnits, formatDistance } from '@/lib/geo';
-import {
-  findScore,
-  formatToPar,
-  participantStats,
-  playedHoleNumbers,
-  scoreName,
-} from '@/lib/scoring/engine';
 import { useProfile } from '@/lib/hooks/data';
-import { isClerkConfigured, isSupabaseConfigured } from '@/lib/config';
+import {
+    findScore,
+    formatToPar,
+    participantStats,
+    playedHoleNumbers,
+    scoreName,
+} from '@/lib/scoring/engine';
+import { useActiveRound } from '@/store/activeRound';
+import { useColors } from '@/theme/ThemeProvider';
+import { radius, spacing, tabularNums } from '@/theme/theme';
 import type { HoleScore, RoundParticipant } from '@/types/domain';
 
 type ExtraKey = 'putts' | 'fairway' | 'gir' | 'penalties';
@@ -47,13 +43,11 @@ export default function ActiveRoundScreen() {
   const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ hole?: string }>();
-  const { userId } = useAuthUser();
-  const profile = useProfile(isClerkConfigured() ? userId : null);
+  useAuthUser();
+  const profile = useProfile();
   const units = profile.data?.units ?? 'yards';
 
   const round = useActiveRound((s) => s.round);
-  const pendingCount = useActiveRound((s) => s.pendingCount);
-  const syncing = useActiveRound((s) => s.syncing);
   const updateScore = useActiveRound((s) => s.updateScore);
   const undoLast = useActiveRound((s) => s.undoLast);
   const undoStack = useActiveRound((s) => s.undoStack);
@@ -96,15 +90,6 @@ export default function ActiveRoundScreen() {
   const greenCenter = greens.data?.available
     ? greens.data.holes.find((h) => h.hole === hole)
     : null;
-
-  // Realtime subscription for multi-device rounds
-  useEffect(() => {
-    if (!round?.isMultiDevice || !isSupabaseConfigured()) return;
-    const sub = subscribeToRound(round.id);
-    return () => {
-      void sub?.unsubscribe();
-    };
-  }, [round?.id, round?.isMultiDevice]);
 
   const hasGreenCenter = greenCenter != null;
 
@@ -171,7 +156,6 @@ export default function ActiveRoundScreen() {
     }
     setConfirmFinish(false);
     setStatus('completed');
-    void flushOutbox();
     router.replace(`/round/${round.id}/summary`);
   };
 
@@ -229,21 +213,12 @@ export default function ActiveRoundScreen() {
         </Pressable>
       </View>
 
-      {/* sync status strip */}
+      {/* persistence status strip */}
       <View style={[styles.syncBar, { borderBottomColor: colors.border }]}>
         <View style={styles.syncLeft}>
-          {pendingCount > 0 ? (
-            <>
-              <CloudOff size={13} color={colors.textSecondary} />
-              <Text variant="micro" secondary>
-                {syncing ? 'Syncing…' : `${pendingCount} pending`}
-              </Text>
-            </>
-          ) : (
-            <Text variant="micro" secondary>
-              {round.isMultiDevice ? `Live · code ${round.shareCode ?? ''}` : 'Saved locally'}
-            </Text>
-          )}
+          <Text variant="micro" secondary>
+            Saved on this device
+          </Text>
         </View>
         <Pressable
           onPress={undoLast}

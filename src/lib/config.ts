@@ -10,22 +10,15 @@ function fromEnv(name: string): string | undefined {
 }
 
 export const config = {
-  /** Backend API base URL. Override per-environment via EXPO_PUBLIC_API_URL. */
+  /** Backend API base URL. On a physical phone this must be the deployed
+   * HTTPS domain (or your machine's LAN IP in dev) — localhost won't work. */
   apiUrl: fromEnv('EXPO_PUBLIC_API_URL') ?? extra.apiUrl ?? 'http://localhost:8787',
-  supabaseUrl: fromEnv('EXPO_PUBLIC_SUPABASE_URL') ?? '',
-  supabaseAnonKey: fromEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY') ?? '',
   clerkPublishableKey: fromEnv('EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY') ?? '',
-  /** Dev-only: render demo data on top of empty accounts. Never enabled in prod builds by default. */
-  demoMode: fromEnv('EXPO_PUBLIC_DEMO_MODE') === 'true',
-  /** Dev-only backend auth bypass — only honoured when server sets ALLOW_DEV_AUTH. */
-  devUserId: fromEnv('EXPO_PUBLIC_DEV_USER_ID') ?? null,
+  /** Optional abuse-deterrent token matched by API_SHARED_SECRET on the server.
+   * Not a real secret (it ships in the bundle). */
+  apiToken: fromEnv('EXPO_PUBLIC_API_TOKEN') ?? '',
 } as const;
 
-export const isSupabaseConfigured = () =>
-  Boolean(
-    config.supabaseUrl.startsWith('http') &&
-      /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(config.supabaseAnonKey),
-  );
 // Reject empty or placeholder keys (e.g. "pk_test_..." copied from .env.example) —
 // Clerk's JS SDK hard-crashes on a malformed key, which bricked the boot.
 export const isClerkConfigured = () =>

@@ -1,6 +1,5 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
+import { StyleSheet, View } from 'react-native';
 
 import { Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
@@ -15,15 +14,14 @@ export default function LegalScreen() {
       <View style={styles.body}>
         <SectionHeader title="Privacy" />
         <Text variant="body" secondary>
-          Arcfore stores your profile, rounds, clubs, practice history, and swing videos in your private
-          Supabase account, protected by row-level security. Swing videos live in private storage accessible
-          only to you. When you record or upload a swing video, it is sent to Google Gemini for analysis — and
-          to no one else. Share cards contain names, course, and scores only; we never include your precise
-          location.
+          Arcfore stores your profile, rounds, clubs, practice history, coach chats, and swing videos
+          locally on this device. Your swing videos never leave your phone — Arcfore extracts a handful of
+          frames and sends only those frames to OpenAI for analysis, along with your golf stats for context.
+          Share cards contain names, course, and scores only; we never include your precise location.
         </Text>
         <Text variant="body" secondary>
-          We don't sell data, run ads, or track you across other apps. Deleting your account removes your
-          profile, rounds, videos, analyses, and chat history.
+          We don't sell data, run ads, or track you across other apps. Erasing your data removes your
+          profile, rounds, videos, analyses, and chat history from this device.
         </Text>
 
         <SectionHeader title="Terms" />
@@ -36,8 +34,9 @@ export default function LegalScreen() {
 
         <SectionHeader title="Data providers" />
         <Text variant="body" secondary>
-          Course data: golfcoursesapi.com (Golf Courses API). AI analysis: Google Gemini. Auth: Clerk.
-          Database: Supabase. Location and camera permissions are used only when you use the related feature.
+          Course data: golfcoursesapi.com (Golf Courses API). AI analysis: OpenAI. Optional sign-in: Clerk.
+          All of your golf data lives on this device. Location and camera permissions are used only when you
+          use the related feature.
         </Text>
         <View style={{ height: spacing.xxxl }} />
       </View>

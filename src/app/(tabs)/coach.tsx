@@ -1,24 +1,22 @@
-import React from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useAuthUser } from '@/lib/auth';
+import { useRouter } from 'expo-router';
 import { Camera, ChevronRight, MessageCircle, Scan, Target } from 'lucide-react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { useColors } from '@/theme/ThemeProvider';
-import { spacing, radius } from '@/theme/theme';
 import { useOneThing, useSwingAnalyses } from '@/lib/hooks/data';
-import { isClerkConfigured } from '@/lib/config';
+import { useColors } from '@/theme/ThemeProvider';
+import { radius, spacing } from '@/theme/theme';
 
 export default function CoachScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuthUser();
-  const analyses = useSwingAnalyses(isClerkConfigured() ? userId : null);
-  const oneThing = useOneThing(isClerkConfigured() ? userId : null);
+  useAuthUser();
+  const analyses = useSwingAnalyses();
+  const oneThing = useOneThing();
 
   return (
     <Screen>

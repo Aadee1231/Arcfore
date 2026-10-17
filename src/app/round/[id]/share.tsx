@@ -1,19 +1,18 @@
-import React, { useMemo, useRef } from 'react';
-import { Share, StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
+import React, { useMemo, useRef } from 'react';
+import { Share, StyleSheet, View } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 
+import { Button } from '@/components/ui/Button';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
+import { fetchLocalRound } from '@/lib/offline/sync';
+import { formatToPar, participantStats, } from '@/lib/scoring/engine';
+import { useActiveRound } from '@/store/activeRound';
 import { useColors } from '@/theme/ThemeProvider';
 import { fonts, radius, spacing, } from '@/theme/theme';
-import { useActiveRound } from '@/store/activeRound';
-import { formatToPar, participantStats, } from '@/lib/scoring/engine';
 import { useQuery } from '@tanstack/react-query';
-import { fetchRemoteRoundDomain } from '@/lib/offline/sync';
-import { isSupabaseConfigured } from '@/lib/config';
 import { Share2 } from 'lucide-react-native';
 
 /** Editorial share card — looks like a printed scorecard, not a neon badge. */
@@ -23,12 +22,12 @@ export default function ShareCardScreen() {
   const shotRef = useRef<React.ComponentRef<typeof ViewShot> | null>(null);
   const activeRound = useActiveRound((s) => s.round);
 
-  const remote = useQuery({
+  const local = useQuery({
     queryKey: ['round', id],
-    queryFn: () => fetchRemoteRoundDomain(id!),
-    enabled: !!id && activeRound?.id !== id && isSupabaseConfigured(),
+    queryFn: () => fetchLocalRound(id!),
+    enabled: !!id && activeRound?.id !== id,
   });
-  const round = activeRound?.id === id ? activeRound : remote.data ?? null;
+  const round = activeRound?.id === id ? activeRound : local.data ?? null;
 
   const stats = useMemo(
     () => (round ? round.participants.map((p) => participantStats(p, round, round.scores)) : []),
@@ -60,7 +59,7 @@ export default function ShareCardScreen() {
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Share' }} />
         <Text variant="body" secondary>
-          {remote.isFetching ? 'Loading…' : 'Round not found.'}
+          {local.isFetching ? 'Loading…' : 'Round not found.'}
         </Text>
       </View>
     );

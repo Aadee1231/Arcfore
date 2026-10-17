@@ -52,7 +52,7 @@ export const greenCentersSchema = z.object({
   ),
 });
 
-/** Gemini swing-analysis structured output (and stored row shape). */
+/** Swing-analysis structured output (and stored row shape). */
 export const analysisObservationSchema = z.object({
   text: z.string(),
   timestamp: z.number().nullable(),
@@ -92,12 +92,23 @@ export const swingAnalysisResultSchema = z.object({
 export type SwingAnalysisResult = z.infer<typeof swingAnalysisResultSchema>;
 
 export const coachRequestSchema = z.object({
-  conversationId: z.string().uuid().nullable(),
   message: z.string().min(1).max(2000),
+  context: z
+    .object({
+      profileSummary: z.string(),
+      bagSummary: z.string(),
+      roundsSummary: z.string(),
+      analysesSummary: z.string(),
+      practiceSummary: z.string(),
+    })
+    .optional(),
+  history: z
+    .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
+    .max(12)
+    .optional(),
 });
 
 export const coachResponseSchema = z.object({
-  conversationId: z.string().uuid(),
   reply: z.string(),
   suggestedPrompts: z.array(z.string()).max(4),
 });

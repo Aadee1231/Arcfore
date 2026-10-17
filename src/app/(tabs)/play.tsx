@@ -1,24 +1,22 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as Location from 'expo-location';
-import { Compass, MapPin, Search, SlidersHorizontal, Users } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Compass, MapPin, Search, SlidersHorizontal } from 'lucide-react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { FlatList, StyleSheet, View } from 'react-native';
 
-import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
-import { Text } from '@/components/ui/Text';
-import { Input } from '@/components/ui/Input';
+import { CourseCard } from '@/components/golf/CourseCard';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { CourseCard } from '@/components/golf/CourseCard';
+import { Input } from '@/components/ui/Input';
+import { EmptyState, Screen, SectionHeader } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
+import { nearbyCourses, searchCourses } from '@/lib/api/courses';
+import { useProfile } from '@/lib/hooks/data';
+import { offlineStorage } from '@/lib/offline/storage';
 import { useColors } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/theme';
-import { nearbyCourses, searchCourses } from '@/lib/api/courses';
-import { offlineStorage } from '@/lib/offline/storage';
 import type { CourseSummary } from '@/types/domain';
-import { useProfile } from '@/lib/hooks/data';
-import { useAuthUser } from '@/lib/auth';
-import { isClerkConfigured } from '@/lib/config';
 
 interface RecentCourse extends CourseSummary {
   savedAt: string;
@@ -27,8 +25,7 @@ interface RecentCourse extends CourseSummary {
 export default function PlayScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { userId } = useAuthUser();
-  const profile = useProfile(isClerkConfigured() ? userId : null);
+  const profile = useProfile();
 
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -137,13 +134,6 @@ export default function PlayScreen() {
           size="sm"
           icon={<SlidersHorizontal size={15} color={colors.textSecondary} />}
           onPress={() => router.push('/course/manual')}
-        />
-        <Button
-          title="Join with code"
-          variant="ghost"
-          size="sm"
-          icon={<Users size={15} color={colors.textSecondary} />}
-          onPress={() => router.push('/round/join')}
         />
       </View>
 

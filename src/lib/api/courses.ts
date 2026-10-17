@@ -1,8 +1,9 @@
 import { apiGet } from '@/lib/api/client';
+import { cacheCourseDetail, getCachedCourseDetail } from '@/lib/db/repo';
 import {
-  courseDetailSchema,
-  courseSummarySchema,
-  greenCentersSchema,
+    courseDetailSchema,
+    courseSummarySchema,
+    greenCentersSchema,
 } from '@/lib/validation/schemas';
 import type { CourseDetail, CourseSummary } from '@/types/domain';
 import { z } from 'zod';
@@ -33,10 +34,19 @@ export async function nearbyCourses(
 }
 
 export async function getCourse(providerId: string): Promise<CourseDetail> {
-  const res = await apiGet<unknown>(`/v1/courses/${encodeURIComponent(providerId)}`);
-  const parsed = courseDetailSchema.safeParse(res);
-  if (!parsed.success) throw new Error('Unexpected course detail response');
-  return parsed.data;
+  try {
+    const res = await apiGet<unknown>(`/v1/courses/${encodeURIComponent(providerId)}`);
+    const parsed = courseDetailSchema.safeParse(res);
+    if (!parsed.success) throw new Error('Unexpected course detail response');
+    // Persist a local copy so course detail still works offline (e.g. resuming
+    // a round in an area with no signal).
+    void cacheCourseDetail('gca', providerId, parsed.data).catch(() => {});
+    return parsed.data;
+  } catch (e) {
+    const cached = await getCachedCourseDetail<CourseDetail>('gca', providerId).catch(() => null);
+    if (cached) return cached;
+    throw e;
+  }
 }
 
 export interface GreenCenters {

@@ -1,21 +1,19 @@
-import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { useAuthUser } from '@/lib/auth';
+import { useQuery } from '@tanstack/react-query';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AlertTriangle, CheckCircle2, Clock, MessageCircle, Shield, Target } from 'lucide-react-native';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Screen, } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import { getSwingVideo } from '@/lib/db/repo';
+import { useSwingAnalysis } from '@/lib/hooks/data';
 import { useColors } from '@/theme/ThemeProvider';
 import { radius, spacing } from '@/theme/theme';
-import { getSupabase, isSupabaseReady } from '@/lib/supabase';
-import type { SwingAnalysis } from '@/types/domain';
-import { config, isClerkConfigured } from '@/lib/config';
-import { DEMO_ANALYSES } from '@/lib/demo/data';
 
 const CONFIDENCE_LABEL: Record<string, string> = {
   low: 'Low confidence — treat as a hint',
@@ -30,45 +28,23 @@ export default function AnalysisDetailScreen() {
   useAuthUser();
   const [showSteps, setShowSteps] = useState(false);
 
-  const demoAnalysis = config.demoMode ? DEMO_ANALYSES.find((a) => a.id === id) : undefined;
-  const analysis = useQuery({
-    queryKey: ['analysis', id],
-    enabled: !!id && !demoAnalysis && isClerkConfigured() && isSupabaseReady(),
-    queryFn: async () => {
-      const { data, error } = await getSupabase()
-        .from('swing_analyses')
-        .select('*')
-        .eq('id', id)
-        .single();
-      if (error) throw error;
-      return data as unknown as SwingAnalysis & { video_storage_path?: string };
-    },
-  });
+  const analysis = useSwingAnalysis(id);
 
-
-  const videoUrl = useQuery({
+  const videoUri = useQuery({
     queryKey: ['analysis-video', analysis.data?.videoId],
-    enabled: !!analysis.data?.videoId && isSupabaseReady(),
+    enabled: !!analysis.data?.videoId,
     queryFn: async () => {
-      const { data: video } = await getSupabase()
-        .from('swing_videos')
-        .select('storage_path')
-        .eq('id', analysis.data!.videoId)
-        .single();
-      if (!video?.storage_path) return null;
-      const { data } = await getSupabase()
-        .storage.from('swing-videos')
-        .createSignedUrl(video.storage_path, 3600);
-      return data?.signedUrl ?? null;
+      const video = await getSwingVideo(analysis.data!.videoId!);
+      return video?.storagePath ?? null; // local file:// uri
     },
   });
 
-  const player = useVideoPlayer(videoUrl.data ?? null, (p) => {
+  const player = useVideoPlayer(videoUri.data ?? null, (p) => {
     p.loop = true;
     p.muted = true;
   });
 
-  const a = demoAnalysis ?? analysis.data;
+  const a = analysis.data;
   const qualityColor = a
     ? a.videoQuality === 'good'
       ? colors.birdie
@@ -90,14 +66,12 @@ export default function AnalysisDetailScreen() {
           </Text>
         ) : !a ? (
           <Text variant="body" secondary style={{ marginTop: spacing.xxl }}>
-            {isClerkConfigured()
-              ? 'Analysis not found — it may have been deleted.'
-              : 'Sign in and configure the backend to view analyses.'}
+            Analysis not found — it may have been deleted.
           </Text>
         ) : (
           <>
-            {/* Video */}
-            {videoUrl.data ? (
+            {/* Video — stored on-device, plays from the local file */}
+            {videoUri.data ? (
               <View style={styles.videoWrap}>
                 <VideoView player={player} style={styles.video} contentFit="cover" nativeControls />
               </View>
